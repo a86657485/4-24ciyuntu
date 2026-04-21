@@ -87,19 +87,18 @@ export const Stage5: React.FC<Props> = ({ wordFreq, playerName, onComplete }) =>
     showLoading('召唤大圣点拨中...');
     setStep(3);
     try {
-      const QWEN_API_KEY = "sk-a6ba686f91e34fe087240b3043041e51";
-      
+      const DEEPSEEK_API_KEY = "sk-eb65e011c69a4e1cb667eecdfce990a8";
       const words = Object.keys(wordFreq).map(k => `${k}: ${wordFreq[k]}`).join(', ');
       const prompt = `学生【${playerName}】是四年级小学生，刚刚完成了第一张词云图。词云数据：${words}。请用孙悟空的语气，给出50字以内的鼓励评价，指出词云图反映出的主角信息，并提一个改进建议。不要使用markdown格式发声。`;
       
-      const res = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
+      const res = await fetch('https://api.deepseek.com/chat/completions', {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${QWEN_API_KEY}`
+          "Authorization": `Bearer ${DEEPSEEK_API_KEY}`
         },
         body: JSON.stringify({
-          model: 'qwen-plus',
+          model: 'deepseek-chat',
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.8,
           max_tokens: 150

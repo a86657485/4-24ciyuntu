@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useRef, ReactNode } from 'r
 import { AIAssistant, LocalMessage } from '../components/AIAssistant';
 import { motion, AnimatePresence } from 'motion/react';
 
-const QWEN_API_KEY = "sk-a6ba686f91e34fe087240b3043041e51";
+const DEEPSEEK_API_KEY = "sk-eb65e011c69a4e1cb667eecdfce990a8";
 
 interface AIContextType {
   triggerAI: (instruction: string) => void;
@@ -29,25 +29,24 @@ export const AITutorProvider = ({ children, playerName }: { children: ReactNode,
   const lastTrigger = useRef(0);
 
   const callLLM = async (msgs: LocalMessage[]) => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
     try {
-      const res = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
+      const res = await fetch('https://api.deepseek.com/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${QWEN_API_KEY}` },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
+        },
         body: JSON.stringify({
-          model: 'qwen-plus',
+          model: 'deepseek-chat',
           messages: msgs.map(m => ({ role: m.role, content: m.content })),
           temperature: 0.7
-        }),
-        signal: controller.signal
+        })
       });
-      clearTimeout(timeoutId);
       if (!res.ok) throw new Error('API Exception');
       const data = await res.json();
       return data.choices[0].message.content;
     } catch (e) {
-      clearTimeout(timeoutId);
+      console.error("LLM Context Error:", e);
       throw new Error('Connection Error');
     }
   };

@@ -4,7 +4,7 @@ import { Button } from '../components/Button';
 import { drawWordCloud } from '../utils/canvas';
 import { useAI } from '../contexts/AIContext';
 
-const QWEN_API_KEY = "sk-a6ba686f91e34fe087240b3043041e51";
+const DEEPSEEK_API_KEY = "sk-eb65e011c69a4e1cb667eecdfce990a8";
 
 interface Props {
   onComplete: () => void;
@@ -29,28 +29,24 @@ export const Stage6: React.FC<Props> = ({ onComplete, playerName }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const callLLM = async (prompt: string) => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout limit
     try {
-      const res = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
+      const res = await fetch('https://api.deepseek.com/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${QWEN_API_KEY}`
+          'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
         },
         body: JSON.stringify({
-          model: 'qwen-plus',
+          model: 'deepseek-chat',
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.7
-        }),
-        signal: controller.signal
+        })
       });
-      clearTimeout(timeoutId);
       if (!res.ok) throw new Error('API Exception');
       const data = await res.json();
       return data.choices[0].message.content;
     } catch (e) {
-      clearTimeout(timeoutId);
+      console.error("LLM Error:", e);
       throw new Error('Connection or Timeout Error');
     }
   };
