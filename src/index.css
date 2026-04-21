@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-deep: #0A0A1A;
+  --color-bg-purple: #1A1035;
+  --color-brand-gold: #FFD700;
+  --color-brand-gold-dark: #FF8C00;
+  --color-brand-red: #C0392B;
+  --color-brand-cyan: #1ABC9C;
+  --color-brand-white: #F0EAD6;
+  
+  --font-sans: 'Helvetica Neue', Arial, 'Microsoft YaHei', sans-serif;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    background: radial-gradient(circle at center, var(--color-bg-purple), var(--color-bg-deep));
+    color: white;
+    @apply min-h-screen overflow-x-hidden relative;
+  }
+}
+
+@layer utilities {
+  .text-gold-gradient {
+    background: linear-gradient(135deg, var(--color-brand-gold), #FFF8DC);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  .bg-glass {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 24px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+  }
+
+  .btn-gold {
+    background: linear-gradient(135deg, var(--color-brand-gold), var(--color-brand-gold-dark));
+    color: var(--color-bg-deep);
+    font-weight: 700;
+    padding: 12px 36px;
+    border-radius: 99px;
+    border: none;
+    box-shadow: 0 8px 20px rgba(255, 215, 0, 0.3);
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+  }
+  .btn-gold:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 6px 20px rgba(255, 215, 0, 0.6);
+  }
+  .btn-gold:active {
+    transform: translateY(0) scale(0.95);
+  }
+}
