@@ -6,3 +6,4 @@ coverage/
 *.log
 .env*
 !.env.example
+learning_records.sqlite*

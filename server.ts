@@ -3,15 +3,11 @@ import Database from "better-sqlite3";
 import { fileURLToPath } from "url";
 import path from "path";
 
-// Support ESM __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Ensure the db is stored in the workspace root or a data folder.
-// Using a local file 'learning_records.sqlite'
 const db = new Database("learning_records.sqlite", { verbose: console.log });
 
-// Initialize database schema
 db.pragma("journal_mode = WAL");
 db.exec(`
   CREATE TABLE IF NOT EXISTS records (
@@ -25,136 +21,1269 @@ db.exec(`
   );
 `);
 
+const STAGE_META = [
+  { id: 1, name: "初识词云", shortName: "词云认知" },
+  { id: 2, name: "文本分词", shortName: "分词训练" },
+  { id: 3, name: "过滤清洗与归类", shortName: "过滤归类" },
+  { id: 4, name: "词频统计", shortName: "词频统计" },
+  { id: 5, name: "生成词云图", shortName: "词云生成" },
+  { id: 6, name: "实战演练", shortName: "实战应用" },
+  { id: 7, name: "知识测验", shortName: "知识测验" },
+] as const;
+
+type StageId = (typeof STAGE_META)[number]["id"];
+type AnyRecord = Record<string, any>;
+
+type RawRow = {
+  id: number;
+  playerName: string;
+  stage: number;
+  score: number;
+  failCount: number;
+  details: string | null;
+  timestamp: string;
+};
+
+type ParsedRow = Omit<RawRow, "details"> & {
+  details: any;
+};
+
+const stageNameMap = Object.fromEntries(STAGE_META.map((item) => [item.id, item.name])) as Record<number, string>;
+const stageShortNameMap = Object.fromEntries(STAGE_META.map((item) => [item.id, item.shortName])) as Record<number, string>;
+
+const safeJsonParse = (value: string | null) => {
+  if (!value) return {};
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+};
+
+const toParsedRows = (rows: RawRow[]): ParsedRow[] => {
+  return rows.map((row) => ({
+    ...row,
+    details: safeJsonParse(row.details),
+  }));
+};
+
+const sum = (values: number[]) => values.reduce((total, current) => total + current, 0);
+
+const getTopWords = (entries: { text: string; count: number }[], limit = 4) => {
+  return entries
+    .filter((item) => item && item.text)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
+};
+
+const getQuizSummary = (details: any) => {
+  const records = Array.isArray(details) ? details : [];
+  const total = records.length;
+  const correct = records.filter((item) => item?.isCorrect).length;
+  return {
+    total,
+    correct,
+    wrong: Math.max(0, total - correct),
+    accuracy: total > 0 ? Math.round((correct / total) * 100) : 0,
+  };
+};
+
+const extractArticleParts = (details: AnyRecord = {}) => {
+  const rawTextFull = typeof details?.rawTextFull === "string" ? details.rawTextFull.trim() : "";
+  const articleTitleField = typeof details?.articleTitle === "string" ? details.articleTitle.trim() : "";
+  const articleBodyField = typeof details?.articleBody === "string" ? details.articleBody.trim() : "";
+
+  if (articleTitleField || articleBodyField) {
+    return {
+      articleTitle: articleTitleField,
+      articleBody: articleBodyField,
+      rawTextFull: rawTextFull || [articleTitleField, articleBodyField].filter(Boolean).join("\n"),
+    };
+  }
+
+  if (!rawTextFull) {
+    return {
+      articleTitle: "",
+      articleBody: "",
+      rawTextFull: "",
+    };
+  }
+
+  const lines = rawTextFull
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return {
+    articleTitle: lines[0] || rawTextFull.slice(0, 18),
+    articleBody: lines.slice(1).join("\n") || lines[0] || rawTextFull,
+    rawTextFull,
+  };
+};
+
+const getStage6Detail = (details: AnyRecord = {}) => {
+  const article = extractArticleParts(details);
+
+  return {
+    sourceLabel: typeof details?.sourceLabel === "string" ? details.sourceLabel : "",
+    articleTitle: article.articleTitle,
+    articleBody: article.articleBody,
+    rawTextFull: article.rawTextFull,
+    articlePreview: typeof details?.rawTextPreview === "string"
+      ? details.rawTextPreview
+      : article.articleBody.slice(0, 180),
+    segmentedWords: Array.isArray(details?.segmentedWords) ? details.segmentedWords : [],
+    cleanedWords: Array.isArray(details?.cleanedWords) ? details.cleanedWords : [],
+    finalWordFreq: Array.isArray(details?.finalWordFreq) ? details.finalWordFreq : [],
+    wordCloudImage: typeof details?.wordCloudImage === "string" ? details.wordCloudImage : "",
+  };
+};
+
+const getQuizRecords = (details: any) => {
+  return Array.isArray(details) ? details : [];
+};
+
+const getStageStatusLabel = (failCount: number) => {
+  if (failCount <= 0) return "表现流畅";
+  if (failCount <= 2) return "有少量试错";
+  if (failCount <= 4) return "需要提示修正";
+  return "需要重点支持";
+};
+
+const buildStageInsight = (row: ParsedRow) => {
+  const details = row.details;
+
+  if (row.stage === 1) {
+    const failCounts = details?.failCounts || {};
+    const totalFails = sum(Object.values(failCounts).map((value) => Number(value) || 0));
+    const selected = Array.isArray(details?.finalQ2Selection) ? details.finalQ2Selection.length : 0;
+    return {
+      tags: ["词云概念", `多选完成 ${selected} 项`],
+      note: totalFails > 0
+        ? `完成词云概念辨析，经历 ${totalFails} 次概念试错后完成判断。`
+        : "完成词云基础概念辨析，能快速理解词云与词频之间的关系。",
+      rawSummary: { failCounts, finalQ2Selection: details?.finalQ2Selection || [] },
+    };
+  }
+
+  if (row.stage === 2) {
+    const slices = Array.isArray(details?.sliceDetails) ? details.sliceDetails : [];
+    const totalAttempts = sum(slices.map((item) => Number(item?.failCount) || 0));
+    const finishedLevels = slices.length;
+    return {
+      tags: [`完成 ${finishedLevels} 轮分词`, `分词失误 ${totalAttempts} 次`],
+      note: finishedLevels > 0
+        ? `完成 ${finishedLevels} 轮句子切分练习，分词边界理解 ${totalAttempts <= 1 ? "较稳定" : "仍有反复修正"}。`
+        : "已提交分词关卡记录，但缺少分词明细。",
+      rawSummary: { sliceDetails: slices },
+    };
+  }
+
+  if (row.stage === 3) {
+    const validWords = Object.entries(details || {}).filter(([key, value]) => !key.startsWith("failCount") && typeof value === "number");
+    return {
+      tags: [`有效词 ${validWords.length} 个`, `分类失误 ${row.failCount} 次`],
+      note: validWords.length > 0
+        ? `完成停用词清洗与近义词归并，共提炼 ${validWords.length} 个有效关键词。`
+        : "完成过滤归类关卡，但未提取到有效词统计。",
+      rawSummary: details,
+    };
+  }
+
+  if (row.stage === 4) {
+    const frequencies = details?.wordFrequencies || {};
+    const topWord = Object.entries(frequencies).sort((a, b) => Number(b[1]) - Number(a[1]))[0];
+    return {
+      tags: [`统计词数 ${Object.keys(frequencies).length} 个`, `词频失误 ${row.failCount} 次`],
+      note: topWord
+        ? `完成词频统计，当前最高频词为“${topWord[0]}”，出现 ${topWord[1]} 次。`
+        : "完成词频统计关卡，但未找到词频结果。",
+      rawSummary: details,
+    };
+  }
+
+  if (row.stage === 5) {
+    const words = Array.isArray(details) ? details : [];
+    const topWords = getTopWords(words, 5);
+    return {
+      tags: [`词云词项 ${words.length} 个`, ...topWords.slice(0, 2).map((item) => item.text)],
+      note: topWords.length > 0
+        ? `成功生成词云草图，核心词集中在 ${topWords.map((item) => item.text).join("、")}。`
+        : "完成词云生成关卡，但未记录词云词项。",
+      rawSummary: { words },
+    };
+  }
+
+  if (row.stage === 6) {
+    const stage6 = getStage6Detail(details);
+    const words = stage6.finalWordFreq;
+    const topWords = getTopWords(words, 5);
+    return {
+      tags: [`实战词项 ${words.length} 个`, stage6.articleTitle ? `文章：${stage6.articleTitle}` : "自主分析"],
+      note: topWords.length > 0
+        ? `完成自主文本实战，${stage6.articleTitle ? `围绕《${stage6.articleTitle}》` : ""}最终高频词为 ${topWords.map((item) => item.text).join("、")}。`
+        : "进入实战演练并完成词云生成，但词频结果较少。",
+      rawSummary: stage6,
+    };
+  }
+
+  if (row.stage === 7) {
+    const quizSummary = getQuizSummary(details);
+    return {
+      tags: [`正确率 ${quizSummary.accuracy}%`, `答对 ${quizSummary.correct}/${quizSummary.total}`],
+      note: quizSummary.total > 0
+        ? `完成知识测验，共答对 ${quizSummary.correct} 题，正确率 ${quizSummary.accuracy}%。`
+        : "已提交知识测验记录，但缺少题目作答明细。",
+      rawSummary: { records: details, quizSummary },
+    };
+  }
+
+  return {
+    tags: [],
+    note: "暂无阶段评价。",
+    rawSummary: details,
+  };
+};
+
+const buildStudentEvaluation = (stageMap: Map<number, ParsedRow>, totalScore: number, totalFails: number) => {
+  const completedStages = Array.from(stageMap.keys()).length;
+  const quizSummary = stageMap.get(7) ? getQuizSummary(stageMap.get(7)?.details) : null;
+  const stage6Words = Array.isArray(stageMap.get(6)?.details?.finalWordFreq) ? stageMap.get(6)?.details?.finalWordFreq : [];
+  const topWords = getTopWords(stage6Words, 3);
+
+  const processText = completedStages >= 7
+    ? "学习路径完整，已经完成从词云认知到自主实战再到知识测验的完整闭环。"
+    : `当前已完成 ${completedStages} 个阶段，学习过程仍在推进中，建议继续补齐后续关卡以形成完整能力链。`;
+
+  const operationText = totalFails <= 3
+    ? "过程操作较稳定，遇到任务规则时能较快理解并完成。"
+    : totalFails <= 8
+      ? "存在一定试错，但能够在提示后持续修正，说明具备调整能力。"
+      : "过程试错较多，建议在分词边界判断和词语归类规则上增加示范练习。";
+
+  const masteryText = quizSummary && quizSummary.total > 0
+    ? quizSummary.accuracy >= 85
+      ? "知识测验表现优秀，说明对词云制作原理、停用词处理和词频统计已经形成较清晰理解。"
+      : quizSummary.accuracy >= 60
+        ? "知识测验基础达标，建议针对易错题继续巩固“数据说话”和“停用词过滤”这些关键概念。"
+        : "知识测验正确率偏低，建议在完成实战后回到概念题进行针对性复盘。"
+    : "尚未完成知识测验，可结合前面各关过程表现继续观察概念掌握程度。";
+
+  const applicationText = topWords.length > 0
+    ? `在实战文本处理中，学生已经能够提炼出 ${topWords.map((item) => item.text).join("、")} 等核心词，具备基础文本分析能力。`
+    : "暂未产出完整实战词云结果，可继续关注学生在真实文本处理中的迁移应用能力。";
+
+  return [processText, operationText, masteryText, applicationText];
+};
+
+const aggregateDashboardData = (rows: ParsedRow[]) => {
+  const byStudent = new Map<string, ParsedRow[]>();
+
+  for (const row of rows) {
+    const key = row.playerName || "未知学生";
+    if (!byStudent.has(key)) {
+      byStudent.set(key, []);
+    }
+    byStudent.get(key)!.push(row);
+  }
+
+  const students = Array.from(byStudent.entries()).map(([playerName, studentRows]) => {
+    const sortedRows = [...studentRows].sort((a, b) => a.id - b.id);
+    const latestStageMap = new Map<number, ParsedRow>();
+
+    for (const row of sortedRows) {
+      latestStageMap.set(row.stage, row);
+    }
+
+    const totalScore = sum(Array.from(latestStageMap.values()).map((row) => row.score));
+    const totalFails = sum(Array.from(latestStageMap.values()).map((row) => row.failCount));
+    const latestRow = sortedRows[sortedRows.length - 1];
+    const completedStages = latestStageMap.size;
+    const stageTimeline = STAGE_META.map((stage) => {
+      const row = latestStageMap.get(stage.id);
+      if (!row) {
+        return {
+          stageId: stage.id,
+          stageName: stage.name,
+          shortName: stage.shortName,
+          status: "未完成",
+          score: 0,
+          failCount: 0,
+          timestamp: "",
+          note: "该阶段暂无提交记录。",
+          tags: [],
+          details: null,
+        };
+      }
+
+      const insight = buildStageInsight(row);
+
+      return {
+        stageId: stage.id,
+        stageName: stage.name,
+        shortName: stage.shortName,
+        status: getStageStatusLabel(row.failCount),
+        score: row.score,
+        failCount: row.failCount,
+        timestamp: row.timestamp,
+        note: insight.note,
+        tags: insight.tags,
+        details: row.details,
+      };
+    });
+
+    const stage6 = latestStageMap.get(6);
+    const stage7 = latestStageMap.get(7);
+    const quizSummary = stage7 ? getQuizSummary(stage7.details) : { total: 0, correct: 0, wrong: 0, accuracy: 0 };
+    const stage6Detail = stage6 ? getStage6Detail(stage6.details) : getStage6Detail({});
+    const stage6Words = stage6Detail.finalWordFreq;
+    const stage7Records = stage7 ? getQuizRecords(stage7.details) : [];
+
+    return {
+      playerName,
+      submissionCount: sortedRows.length,
+      completedStages,
+      totalScore,
+      totalFails,
+      latestTimestamp: latestRow?.timestamp || "",
+      latestStage: latestRow?.stage || 0,
+      latestStageName: stageNameMap[latestRow?.stage || 0] || "暂无阶段",
+      progressPercent: Math.round((completedStages / STAGE_META.length) * 100),
+      evaluation: buildStudentEvaluation(latestStageMap, totalScore, totalFails),
+      quizSummary,
+      stageTimeline,
+      wordCloudImage: stage6Detail.wordCloudImage,
+      textPreview: stage6Detail.articlePreview,
+      articleTitle: stage6Detail.articleTitle,
+      sourceLabel: stage6Detail.sourceLabel,
+      topWords: getTopWords(stage6Words, 8),
+      stage6Detail,
+      stage7Detail: {
+        summary: quizSummary,
+        records: stage7Records,
+      },
+      rawStageCount: latestStageMap.size,
+    };
+  }).sort((a, b) => {
+    if (b.completedStages !== a.completedStages) return b.completedStages - a.completedStages;
+    if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+    return b.latestTimestamp.localeCompare(a.latestTimestamp);
+  });
+
+  const completedStudents = students.filter((student) => student.completedStages === STAGE_META.length).length;
+  const avgScore = students.length > 0 ? Math.round(sum(students.map((item) => item.totalScore)) / students.length) : 0;
+  const avgFails = students.length > 0 ? Math.round(sum(students.map((item) => item.totalFails)) / students.length) : 0;
+  const avgAccuracyCandidates = students.filter((student) => student.quizSummary.total > 0);
+  const avgAccuracy = avgAccuracyCandidates.length > 0
+    ? Math.round(sum(avgAccuracyCandidates.map((item) => item.quizSummary.accuracy)) / avgAccuracyCandidates.length)
+    : 0;
+
+  const stageStats = STAGE_META.map((stage) => {
+    const count = students.filter((student) => student.rawStageCount >= stage.id).length;
+    return {
+      stageId: stage.id,
+      stageName: stage.name,
+      shortName: stage.shortName,
+      count,
+      percent: students.length > 0 ? Math.round((count / students.length) * 100) : 0,
+    };
+  });
+
+  return {
+    metrics: {
+      totalStudents: students.length,
+      totalRecords: rows.length,
+      completedStudents,
+      avgScore,
+      avgFails,
+      avgAccuracy,
+    },
+    stageStats,
+    students,
+  };
+};
+
+const adminHtml = () => `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>学生学习目录</title>
+  <style>
+    :root {
+      --bg: #050c18;
+      --paper: rgba(10, 20, 38, 0.82);
+      --paper-strong: rgba(7, 15, 28, 0.96);
+      --ink: #e9f6ff;
+      --muted: #81a0bf;
+      --line: rgba(114, 211, 255, 0.14);
+      --accent: #33d1ff;
+      --accent-deep: #8fe7ff;
+      --gold: #7ef7d4;
+      --green: #78ffb1;
+      --red: #ff7b91;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: "SF Pro Display", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(51, 209, 255, 0.18), transparent 24%),
+        radial-gradient(circle at 100% 10%, rgba(126, 247, 212, 0.14), transparent 22%),
+        radial-gradient(circle at 50% 100%, rgba(34, 76, 125, 0.22), transparent 26%),
+        linear-gradient(180deg, #040914 0%, #071222 48%, #050b17 100%);
+    }
+    body.modal-open { overflow: hidden; }
+    .shell {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 22px 18px 40px;
+    }
+    .panel {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+    .toolbar {
+      display: grid;
+      grid-template-columns: 1.1fr 1.2fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .toolbar-main, .toolbar-side {
+      padding: 18px 20px;
+    }
+    .title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(28px, 4vw, 42px);
+      line-height: 1.08;
+      font-weight: 900;
+    }
+    .subline {
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .toolbar-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(114, 211, 255, 0.16);
+      background: rgba(10, 28, 48, 0.78);
+      font-size: 12px;
+      color: var(--accent-deep);
+    }
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 180px auto;
+      gap: 10px;
+      align-items: center;
+    }
+    .input, .select {
+      width: 100%;
+      border: 1px solid rgba(114, 211, 255, 0.16);
+      background: rgba(7, 18, 34, 0.92);
+      border-radius: 14px;
+      padding: 12px 14px;
+      font-size: 14px;
+      color: var(--ink);
+    }
+    button {
+      cursor: pointer;
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 16px;
+      font-size: 13px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #22b8ff, #1267ff);
+      color: white;
+      box-shadow: 0 10px 24px rgba(18, 103, 255, 0.26);
+    }
+    .metrics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .metric-card {
+      padding: 16px 18px;
+      min-width: 140px;
+      flex: 1 1 0;
+    }
+    .metric-label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .metric-value {
+      font-size: 28px;
+      font-weight: 900;
+      margin-bottom: 4px;
+    }
+    .metric-note {
+      color: rgba(233, 246, 255, 0.58);
+      font-size: 12px;
+    }
+    .stage-strip {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .stage-card {
+      padding: 14px;
+    }
+    .stage-card b {
+      display: block;
+      font-size: 22px;
+      margin: 8px 0 6px;
+    }
+    .stage-title {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .progress-line {
+      height: 8px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.08);
+      margin-top: 10px;
+    }
+    .progress-line span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #7ef7d4, #33d1ff);
+    }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .section-title {
+      font-size: 22px;
+      font-weight: 900;
+    }
+    .section-note {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .list-shell {
+      overflow: hidden;
+    }
+    .students {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+    }
+    .list-head, .student-row {
+      display: grid;
+      grid-template-columns: 1.4fr 96px 88px 88px 120px 108px 108px;
+      gap: 10px;
+      align-items: center;
+    }
+    .list-head {
+      padding: 0 12px 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .student-row {
+      width: 100%;
+      border: 1px solid rgba(114, 211, 255, 0.12);
+      border-radius: 18px;
+      background:
+        linear-gradient(180deg, rgba(10, 21, 39, 0.94), rgba(8, 17, 30, 0.88));
+      padding: 10px 12px;
+      min-height: 84px;
+    }
+    .student-name {
+      font-size: 20px;
+      font-weight: 900;
+      line-height: 1.15;
+    }
+    .mini {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+      margin-top: 4px;
+    }
+    .progress-badge, .metric-badge {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 34px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(51, 209, 255, 0.14);
+      color: var(--accent-deep);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .chip {
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: rgba(31, 41, 55, 0.05);
+      color: var(--ink);
+      border: 1px solid rgba(114, 211, 255, 0.10);
+    }
+    .thumb-btn {
+      width: 96px;
+      height: 58px;
+      border-radius: 14px;
+      overflow: hidden;
+      padding: 0;
+      border: 1px solid rgba(114, 211, 255, 0.18);
+      background: rgba(5, 16, 29, 0.9);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
+    }
+    .thumb-btn img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      background: white;
+    }
+    .thumb-btn-empty {
+      display: grid;
+      place-items: center;
+      width: 100%;
+      height: 100%;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.3;
+      padding: 6px;
+    }
+    .ghost-btn {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(51, 209, 255, 0.10);
+      color: var(--accent-deep);
+      box-shadow: none;
+    }
+    .ghost-btn[disabled], .thumb-btn[disabled] {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .empty {
+      padding: 42px 18px;
+      text-align: center;
+      border-radius: 22px;
+      border: 1px dashed rgba(114, 211, 255, 0.16);
+      color: var(--muted);
+      background: rgba(8, 20, 36, 0.82);
+    }
+    .loading {
+      padding: 56px 0;
+      text-align: center;
+      color: var(--muted);
+      font-size: 15px;
+    }
+    .modal-shell {
+      position: fixed;
+      inset: 0;
+      display: none;
+      z-index: 60;
+    }
+    .modal-shell.show { display: block; }
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(2, 8, 18, 0.72);
+      backdrop-filter: blur(10px);
+    }
+    .modal-panel {
+      position: relative;
+      z-index: 1;
+      max-width: 1120px;
+      height: calc(100vh - 40px);
+      margin: 20px auto;
+      border-radius: 30px;
+      background: var(--paper-strong);
+      border: 1px solid rgba(114, 211, 255, 0.14);
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.40);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .modal-scroll {
+      overflow: auto;
+      padding: 22px;
+    }
+    .modal-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      z-index: 3;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: rgba(51, 209, 255, 0.10);
+      color: var(--accent-deep);
+      box-shadow: none;
+    }
+    .modal-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .modal-title {
+      font-size: 28px;
+      font-weight: 900;
+      line-height: 1.1;
+    }
+    .detail-section {
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: rgba(9, 21, 38, 0.82);
+      padding: 18px;
+    }
+    .detail-copy {
+      color: rgba(31, 41, 55, 0.78);
+      line-height: 1.72;
+      font-size: 14px;
+    }
+    .detail-section h3 {
+      margin: 0 0 12px;
+      font-size: 20px;
+    }
+    .detail-section h4 {
+      margin: 0 0 10px;
+      font-size: 15px;
+    }
+    .article-box, .word-box, .quiz-box {
+      border-radius: 20px;
+      border: 1px solid rgba(114, 211, 255, 0.10);
+      background: rgba(7, 18, 34, 0.9);
+      padding: 16px;
+    }
+    .article-body {
+      white-space: pre-wrap;
+      line-height: 1.78;
+      color: rgba(31, 41, 55, 0.84);
+      font-size: 14px;
+    }
+    .cloud-large {
+      border-radius: 20px;
+      overflow: hidden;
+      border: 1px solid rgba(114, 211, 255, 0.12);
+      background: white;
+      margin-top: 14px;
+    }
+    .cloud-large img {
+      width: 100%;
+      display: block;
+      height: auto;
+    }
+    .word-box {
+      min-height: 120px;
+      margin-top: 12px;
+    }
+    .word-stream {
+      line-height: 1.8;
+      color: rgba(31, 41, 55, 0.82);
+      font-size: 13px;
+      word-break: break-word;
+    }
+    .freq-table {
+      display: grid;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .freq-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(51, 209, 255, 0.06);
+      font-size: 13px;
+    }
+    .freq-rank {
+      color: var(--gold);
+      font-weight: 800;
+    }
+    .compact-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .compact-item {
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(114, 211, 255, 0.10);
+      background: rgba(7, 18, 34, 0.9);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+    .quiz-list {
+      display: grid;
+      gap: 12px;
+    }
+    .quiz-box {
+      padding: 14px;
+    }
+    .quiz-title {
+      font-weight: 800;
+      line-height: 1.6;
+      margin-bottom: 8px;
+    }
+    .quiz-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .quiz-chip {
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: rgba(51, 209, 255, 0.08);
+      color: var(--ink);
+    }
+    .quiz-chip.correct {
+      background: rgba(47, 143, 102, 0.10);
+      color: var(--green);
+    }
+    .quiz-chip.wrong {
+      background: rgba(201, 75, 85, 0.10);
+      color: var(--red);
+    }
+    .quiz-answer {
+      font-size: 13px;
+      color: rgba(31, 41, 55, 0.76);
+      line-height: 1.6;
+    }
+    @media (max-width: 1260px) {
+      .toolbar { grid-template-columns: 1fr; }
+      .stage-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .list-head, .student-row {
+        grid-template-columns: 1.4fr 96px 88px 88px 120px 108px 108px;
+        min-width: 820px;
+      }
+      .list-shell { overflow-x: auto; }
+    }
+    @media (max-width: 860px) {
+      .controls, .stage-strip { grid-template-columns: 1fr; }
+      .modal-panel { height: calc(100vh - 16px); margin: 8px; }
+      .toolbar-main, .toolbar-side, .modal-scroll { padding: 16px; }
+      .metrics { display: grid; grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="toolbar">
+      <div class="panel toolbar-main">
+        <div class="title-row">
+          <h1>学生学习目录</h1>
+          <button id="refreshBtn">刷新</button>
+        </div>
+        <div class="subline">按姓名查找、按姓名排序，点击词云图或文章按钮查看详细内容。</div>
+      </div>
+      <div class="panel toolbar-side">
+        <div class="controls">
+          <input id="searchInput" class="input" type="text" placeholder="搜索学生姓名" />
+          <select id="sortSelect" class="select">
+            <option value="name-asc">姓名 A-Z</option>
+            <option value="name-desc">姓名 Z-A</option>
+            <option value="progress-desc">进度从高到低</option>
+          </select>
+          <div class="toolbar-actions">
+            <div class="pill">本地库</div>
+            <div class="pill" id="lastUpdatedPill">加载中</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="metrics" class="metrics">
+      <div class="panel metric-card loading">正在整理学生目录...</div>
+    </section>
+
+    <section id="stageStats" class="stage-strip"></section>
+
+    <section>
+      <div class="section-head">
+        <div>
+          <div class="section-title">学生列表</div>
+          <div class="section-note">科技风列表目录，点击入口查看详情。</div>
+        </div>
+      </div>
+      <div class="panel list-shell">
+        <div class="list-head">
+          <div>学生姓名</div>
+          <div>词云图</div>
+          <div>进度</div>
+          <div>总分</div>
+          <div>测验正确率</div>
+          <div>文章内容</div>
+          <div>测验明细</div>
+        </div>
+        <div id="students" class="students"></div>
+      </div>
+    </section>
+  </div>
+
+  <div id="studentModal" class="modal-shell">
+    <div class="modal-backdrop" data-close-modal="1"></div>
+    <div class="modal-panel">
+      <button id="closeModalBtn" class="modal-close" type="button">×</button>
+      <div id="studentModalBody" class="modal-scroll"></div>
+    </div>
+  </div>
+
+  <script>
+    const pageState = { students: [], filteredStudents: [] };
+
+    const escapeHtml = function(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    };
+
+    const formatDate = function(value) {
+      if (!value) return '暂无记录';
+      const date = new Date(String(value).replace(' ', 'T'));
+      if (Number.isNaN(date.getTime())) return String(value);
+      return new Intl.DateTimeFormat('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(date);
+    };
+
+    const setEmpty = function(id, text) {
+      document.getElementById(id).innerHTML = '<div class="empty">' + escapeHtml(text) + '</div>';
+    };
+
+    const renderMetrics = function(metrics) {
+      const items = [
+        { label: '学生人数', value: metrics.totalStudents, note: '按姓名聚合' },
+        { label: '完整通关', value: metrics.completedStudents, note: '完成 7 关' },
+        { label: '平均总分', value: metrics.avgScore, note: '最新记录汇总' },
+        { label: '平均试错', value: metrics.avgFails, note: '全流程' },
+        { label: '平均测验正确率', value: metrics.avgAccuracy + '%', note: '已测验学生' }
+      ];
+
+      document.getElementById('metrics').innerHTML = items.map(function(item) {
+        return '<div class="panel metric-card">' +
+          '<div class="metric-label">' + escapeHtml(item.label) + '</div>' +
+          '<div class="metric-value">' + escapeHtml(item.value) + '</div>' +
+          '<div class="metric-note">' + escapeHtml(item.note) + '</div>' +
+        '</div>';
+      }).join('');
+    };
+
+    const renderStageStats = function(items) {
+      if (!items.length) {
+        setEmpty('stageStats', '暂无阶段统计数据。');
+        return;
+      }
+
+      document.getElementById('stageStats').innerHTML = items.map(function(item) {
+        return '<div class="panel stage-card">' +
+          '<div class="stage-title">第 ' + escapeHtml(item.stageId) + ' 关</div>' +
+          '<b>' + escapeHtml(item.count) + '</b>' +
+          '<div class="stage-title">' + escapeHtml(item.shortName) + ' · ' + escapeHtml(item.percent) + '%</div>' +
+          '<div class="progress-line"><span style="width:' + escapeHtml(item.percent) + '%"></span></div>' +
+        '</div>';
+      }).join('');
+    };
+
+    const sortStudents = function(students) {
+      const sortValue = document.getElementById('sortSelect').value;
+      return [...students].sort(function(a, b) {
+        if (sortValue === 'name-desc') return String(b.playerName).localeCompare(String(a.playerName), 'zh-Hans-CN');
+        if (sortValue === 'progress-desc') {
+          if (b.completedStages !== a.completedStages) return b.completedStages - a.completedStages;
+          return String(a.playerName).localeCompare(String(b.playerName), 'zh-Hans-CN');
+        }
+        return String(a.playerName).localeCompare(String(b.playerName), 'zh-Hans-CN');
+      });
+    };
+
+    const filterAndRenderStudents = function() {
+      const keyword = document.getElementById('searchInput').value.trim().toLowerCase();
+      const filtered = pageState.students.filter(function(student) {
+        return !keyword || String(student.playerName || '').toLowerCase().includes(keyword);
+      });
+      pageState.filteredStudents = sortStudents(filtered);
+      renderStudents(pageState.filteredStudents);
+    };
+
+    const openWordCloudModal = function(student) {
+      const stage6 = student.stage6Detail || {};
+      const freqRows = Array.isArray(stage6.finalWordFreq) && stage6.finalWordFreq.length
+        ? stage6.finalWordFreq.map(function(item, idx) {
+            return '<div class="freq-row">' +
+              '<div><span class="freq-rank">TOP ' + escapeHtml(idx + 1) + '</span> ' + escapeHtml(item.text) + '</div>' +
+              '<div>词频</div>' +
+              '<div><b>' + escapeHtml(item.count) + '</b></div>' +
+            '</div>';
+          }).join('')
+        : '<div class="empty">暂无词频统计数据。</div>';
+
+      const bodyHtml =
+        '<div class="modal-title-row">' +
+          '<div class="modal-title">' + escapeHtml(student.playerName) + ' · 词云图详情</div>' +
+          '<div class="pill">更新 ' + escapeHtml(formatDate(student.latestTimestamp)) + '</div>' +
+        '</div>' +
+        '<section class="detail-section">' +
+          '<h3>词云图</h3>' +
+          (stage6.wordCloudImage
+            ? '<div class="cloud-large"><img src="' + stage6.wordCloudImage + '" alt="完整词云图" /></div>'
+            : '<div class="empty">该学生还没有词云图。</div>') +
+        '</section>' +
+        '<section class="detail-section" style="margin-top:14px;">' +
+          '<h3>词频统计</h3>' +
+          '<div class="freq-table">' + freqRows + '</div>' +
+        '</section>' +
+        '<section class="detail-section" style="margin-top:14px;">' +
+          '<h3>处理过程</h3>' +
+          '<div class="compact-list">' +
+            '<div class="compact-item"><b>分词结果</b><br />' + escapeHtml(Array.isArray(stage6.segmentedWords) && stage6.segmentedWords.length ? stage6.segmentedWords.join(' / ') : '暂无分词数据') + '</div>' +
+            '<div class="compact-item"><b>清洗结果</b><br />' + escapeHtml(Array.isArray(stage6.cleanedWords) && stage6.cleanedWords.length ? stage6.cleanedWords.join(' / ') : '暂无清洗数据') + '</div>' +
+          '</div>' +
+        '</section>';
+
+      document.getElementById('studentModalBody').innerHTML = bodyHtml;
+      document.getElementById('studentModal').classList.add('show');
+      document.body.classList.add('modal-open');
+    };
+
+    const openArticleModal = function(student) {
+      const stage6 = student.stage6Detail || {};
+      const bodyHtml =
+        '<div class="modal-title-row">' +
+          '<div class="modal-title">' + escapeHtml(student.playerName) + ' · 生成文章</div>' +
+          '<div class="pill">更新 ' + escapeHtml(formatDate(student.latestTimestamp)) + '</div>' +
+        '</div>' +
+        '<section class="detail-section">' +
+          '<h3>' + escapeHtml(stage6.articleTitle || '暂无文章题目') + '</h3>' +
+          '<div class="article-box">' +
+            '<div class="article-body">' + escapeHtml(stage6.articleBody || stage6.rawTextFull || '当前记录没有保存文章内容。') + '</div>' +
+          '</div>' +
+        '</section>';
+
+      document.getElementById('studentModalBody').innerHTML = bodyHtml;
+      document.getElementById('studentModal').classList.add('show');
+      document.body.classList.add('modal-open');
+    };
+
+    const openQuizModal = function(student) {
+      const stage7 = student.stage7Detail || { summary: { total: 0, correct: 0, wrong: 0, accuracy: 0 }, records: [] };
+      const quizRows = Array.isArray(stage7.records) && stage7.records.length
+        ? stage7.records.map(function(item, idx) {
+            return '<div class="quiz-box">' +
+              '<div class="quiz-title">第 ' + escapeHtml(idx + 1) + ' 题 · ' + escapeHtml(item.questionText || '未记录题目') + '</div>' +
+              '<div class="quiz-meta">' +
+                '<span class="quiz-chip ' + (item.isCorrect ? 'correct' : 'wrong') + '">' + (item.isCorrect ? '答对' : '答错') + '</span>' +
+                '<span class="quiz-chip">选择：' + escapeHtml(item.selectedOptionText || '未记录') + '</span>' +
+              '</div>' +
+            '</div>';
+          }).join('')
+        : '<div class="empty">该学生还没有提交终极测验。</div>';
+
+      const bodyHtml =
+        '<div class="modal-title-row">' +
+          '<div class="modal-title">' + escapeHtml(student.playerName) + ' · 测验明细</div>' +
+          '<div class="pill">正确率 ' + escapeHtml(stage7.summary.accuracy || 0) + '%</div>' +
+        '</div>' +
+        '<section class="detail-section">' +
+          '<div class="toolbar-actions" style="margin-bottom:12px;">' +
+            '<div class="pill">共 ' + escapeHtml(stage7.summary.total || 0) + ' 题</div>' +
+            '<div class="pill">答对 ' + escapeHtml(stage7.summary.correct || 0) + ' 题</div>' +
+            '<div class="pill">答错 ' + escapeHtml(stage7.summary.wrong || 0) + ' 题</div>' +
+          '</div>' +
+          '<div class="quiz-list">' + quizRows + '</div>' +
+        '</section>';
+
+      document.getElementById('studentModalBody').innerHTML = bodyHtml;
+      document.getElementById('studentModal').classList.add('show');
+      document.body.classList.add('modal-open');
+    };
+
+    const renderStudents = function(students) {
+      if (!students.length) {
+        setEmpty('students', '没有匹配的学生。');
+        return;
+      }
+
+      document.getElementById('students').innerHTML = students.map(function(student, index) {
+        const thumb = student.wordCloudImage
+          ? '<button type="button" class="thumb-btn" data-action="wordcloud" data-index="' + index + '"><img src="' + student.wordCloudImage + '" alt="词云图缩略图" /></button>'
+          : '<button type="button" class="thumb-btn" disabled><div class="thumb-btn-empty">暂无词云</div></button>';
+
+        return '<div class="student-row">' +
+          '<div>' +
+            '<div class="student-name">' + escapeHtml(student.playerName) + '</div>' +
+            '<div class="mini">最近更新 ' + escapeHtml(formatDate(student.latestTimestamp)) + '</div>' +
+          '</div>' +
+          '<div>' + thumb + '</div>' +
+          '<div><span class="progress-badge">' + escapeHtml(student.completedStages) + '/7</span></div>' +
+          '<div><span class="metric-badge">' + escapeHtml(student.totalScore) + '</span></div>' +
+          '<div><span class="metric-badge">' + escapeHtml(student.quizSummary.accuracy) + '%</span></div>' +
+          '<div><button type="button" class="ghost-btn" data-action="article" data-index="' + index + '"' + (student.stage6Detail && (student.stage6Detail.articleBody || student.stage6Detail.rawTextFull) ? '' : ' disabled') + '>查看文章</button></div>' +
+          '<div><button type="button" class="ghost-btn" data-action="quiz" data-index="' + index + '"' + (student.stage7Detail && student.stage7Detail.records && student.stage7Detail.records.length ? '' : ' disabled') + '>查看测验</button></div>' +
+        '</div>';
+      }).join('');
+
+      document.querySelectorAll('[data-action="wordcloud"]').forEach(function(el) {
+        el.addEventListener('click', function() {
+          openWordCloudModal(pageState.filteredStudents[Number(el.getAttribute('data-index'))]);
+        });
+      });
+      document.querySelectorAll('[data-action="article"]').forEach(function(el) {
+        el.addEventListener('click', function() {
+          openArticleModal(pageState.filteredStudents[Number(el.getAttribute('data-index'))]);
+        });
+      });
+      document.querySelectorAll('[data-action="quiz"]').forEach(function(el) {
+        el.addEventListener('click', function() {
+          openQuizModal(pageState.filteredStudents[Number(el.getAttribute('data-index'))]);
+        });
+      });
+    };
+
+    const closeStudentModal = function() {
+      document.getElementById('studentModal').classList.remove('show');
+      document.body.classList.remove('modal-open');
+    };
+
+    const loadDashboard = async function() {
+      try {
+        const res = await fetch('/api/dashboard-data', { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        document.getElementById('lastUpdatedPill').textContent = '最近更新：' + formatDate(new Date().toISOString());
+        renderMetrics(data.metrics || {});
+        renderStageStats(data.stageStats || []);
+        pageState.students = data.students || [];
+        filterAndRenderStudents();
+      } catch (error) {
+        console.error(error);
+        setEmpty('metrics', '学生档案加载失败。');
+        setEmpty('stageStats', '阶段统计加载失败。');
+        setEmpty('students', '学生目录加载失败。');
+      }
+    };
+
+    document.getElementById('refreshBtn').addEventListener('click', loadDashboard);
+    document.getElementById('searchInput').addEventListener('input', filterAndRenderStudents);
+    document.getElementById('sortSelect').addEventListener('change', filterAndRenderStudents);
+    document.getElementById('closeModalBtn').addEventListener('click', closeStudentModal);
+    document.querySelector('[data-close-modal="1"]').addEventListener('click', closeStudentModal);
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') closeStudentModal();
+    });
+
+    loadDashboard();
+    setInterval(loadDashboard, 15000);
+  </script>
+</body>
+</html>`;
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // Middleware to parse JSON bodies
-  app.use(express.json({ limit: '50mb' }));
+  app.use(express.json({ limit: "50mb" }));
 
-  // --- API Routes ---
-
-  // GET /admin - Serve the independent Teacher Dashboard
-  app.get("/admin", (req, res) => {
-    res.send(`
-    <!DOCTYPE html>
-    <html lang="zh">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>西游词云 - 教师独立数据大屏</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-    </head>
-    <body class="bg-slate-900 text-white p-8 font-sans">
-        <div class="max-w-6xl mx-auto">
-            <div class="flex justify-between items-center mb-8 border-b border-slate-700 pb-4">
-                <h1 class="text-3xl font-bold text-amber-400">📊 独立数据看板 (本地部署版)</h1>
-                <div class="flex gap-4">
-                    <a href="/" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded text-sm font-bold transition">返回学生端</a>
-                    <button onclick="fetchData()" class="bg-emerald-500 hover:bg-emerald-600 px-4 py-2 rounded text-sm font-bold transition">↻ 刷新数据</button>
-                </div>
-            </div>
-            
-            <div id="data-container" class="grid gap-4">
-                <p class="text-slate-400">正在加载数据...</p>
-            </div>
-        </div>
-
-        <script>
-            async function fetchData() {
-                try {
-                    const res = await fetch('/api/records');
-                    const records = await res.json();
-                    const container = document.getElementById('data-container');
-                    
-                    if (records.length === 0) {
-                        container.innerHTML = '<div class="p-8 text-center bg-slate-800 rounded-lg text-slate-400">暂无学生数据。学生通关后数据会显示在这里。</div>';
-                        return;
-                    }
-
-                    container.innerHTML = records.map(r => {
-                        let extraHtml = '';
-                        if (r.details && r.details.wordCloudImage) {
-                            extraHtml = '<div class="mt-4 border-t border-slate-600 pt-4"><p class="text-sm text-slate-400 mb-2">生成的词云图：</p><img src="' + r.details.wordCloudImage + '" class="w-full max-w-sm rounded border border-slate-600" /></div>';
-                        }
-                        return '<div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">' +
-                               '<div class="flex justify-between items-start">' +
-                                 '<div>' +
-                                   '<h3 class="text-xl font-bold text-emerald-400">👤 ' + (r.playerName || '未知学生') + ' <span class="text-sm font-normal text-slate-400 ml-2">🕒 ' + r.timestamp + '</span></h3>' +
-                                   '<p class="mt-2 text-amber-300 font-bold">完成关卡：第 ' + r.stage + ' 关 | 获得金币：' + r.score + '</p>' +
-                                 '</div>' +
-                               '</div>' +
-                               '<div class="mt-4 bg-slate-900 p-4 rounded text-sm font-mono text-slate-300 overflow-auto max-h-40">' +
-                                 '详细探针分析：<br/>' + JSON.stringify(r.details, null, 2) + extraHtml +
-                               '</div>' +
-                               '</div>';
-                    }).join('');
-                } catch (e) {
-                    console.error(e);
-                }
-            }
-            fetchData();
-            setInterval(fetchData, 5000); // 每5秒自动刷新
-        </script>
-    </body>
-    </html>
-    `);
+  app.get("/admin", (_req, res) => {
+    res.type("html").send(adminHtml());
   });
 
-  // GET /api/health
-  app.get("/api/health", (req, res) => {
+  app.get("/api/health", (_req, res) => {
     res.json({ status: "ok" });
   });
 
-  // POST /api/records - Save a student's learning record
   app.post("/api/records", (req, res) => {
     const { playerName, stage, score, failCount, details } = req.body;
-    
+
     try {
       const stmt = db.prepare(`
         INSERT INTO records (playerName, stage, score, failCount, details)
         VALUES (?, ?, ?, ?, ?)
       `);
-      
+
       const info = stmt.run(
-        playerName || "Unknown", 
-        stage || 0, 
-        score || 0, 
-        failCount || 0, 
+        playerName || "Unknown",
+        stage || 0,
+        score || 0,
+        failCount || 0,
         details ? JSON.stringify(details) : "{}"
       );
-      
+
       res.json({ success: true, id: info.lastInsertRowid });
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error inserting record:", err);
-      // @ts-ignore
       res.status(500).json({ error: err.message });
     }
   });
 
-  // GET /api/records - Retrieve all records for the dashboard
-  app.get("/api/records", (req, res) => {
+  app.get("/api/records", (_req, res) => {
     try {
-      const stmt = db.prepare("SELECT * FROM records ORDER BY timestamp DESC");
-      const rows = stmt.all();
-      
-      // Parse JSON details back into objects for easier client usage
-      const parsedRows = rows.map((row: any) => ({
-        ...row,
-        details: row.details ? JSON.parse(row.details) : {}
-      }));
-      
-      res.json(parsedRows);
-    } catch (err) {
+      const stmt = db.prepare("SELECT * FROM records ORDER BY timestamp DESC, id DESC");
+      const rows = stmt.all() as RawRow[];
+      res.json(toParsedRows(rows));
+    } catch (err: any) {
       console.error("Error fetching records:", err);
-      // @ts-ignore
       res.status(500).json({ error: err.message });
     }
   });
 
-  // --- Vite Middleware ---
+  app.get("/api/dashboard-data", (_req, res) => {
+    try {
+      const stmt = db.prepare("SELECT * FROM records ORDER BY id ASC");
+      const rows = stmt.all() as RawRow[];
+      const parsedRows = toParsedRows(rows);
+      res.json(aggregateDashboardData(parsedRows));
+    } catch (err: any) {
+      console.error("Error aggregating dashboard data:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   if (process.env.NODE_ENV !== "production") {
-    // Dynamic import inside a condition limits it to development only
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -164,7 +1293,7 @@ async function startServer() {
   } else {
     const distPath = path.join(__dirname, "dist");
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+    app.get("*", (_req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

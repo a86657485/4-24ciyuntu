@@ -15,6 +15,7 @@ export const Stage6: React.FC<Props> = ({ onComplete, playerName }) => {
   const { triggerAI } = useAI();
   const [showIntroModal, setShowIntroModal] = useState(true);
   const [rawText, setRawText] = useState('');
+  const [sourceLabel, setSourceLabel] = useState('学生自选文本');
   const [step, setStep] = useState(0); // 0:input, 1:segmented, 2:cleaned, 3:counted, 4:cloud
   
   const [words, setWords] = useState<string[]>([]);
@@ -36,6 +37,33 @@ export const Stage6: React.FC<Props> = ({ onComplete, playerName }) => {
   const [practiceWords, setPracticeWords] = useState<string[]>([]);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const parseArticleContent = () => {
+    const normalized = rawText.trim();
+    if (!normalized) {
+      return {
+        articleTitle: '',
+        articleBody: '',
+      };
+    }
+
+    const lines = normalized
+      .split(/\n+/)
+      .map(line => line.trim())
+      .filter(Boolean);
+
+    if (lines.length === 0) {
+      return {
+        articleTitle: normalized.slice(0, 18),
+        articleBody: normalized,
+      };
+    }
+
+    return {
+      articleTitle: lines[0],
+      articleBody: lines.slice(1).join('\n') || lines[0],
+    };
+  };
 
   const playSuccess = () => new Audio('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3').play().catch(() => {});
   const playError = () => new Audio('https://assets.mixkit.co/active_storage/sfx/2003/2003-preview.mp3').play().catch(() => {});
@@ -75,6 +103,7 @@ export const Stage6: React.FC<Props> = ({ onComplete, playerName }) => {
   const generateSampleText = async (type: string, isClassic: boolean = false) => {
     if (step > 0) return;
     setIsGeneratingText(true);
+    setSourceLabel(isClassic ? `名著片段 · ${type}` : `AI 生成素材 · ${type}`);
     setRawText('大圣正在施展分身法替你搬运文章中，大约需要几秒钟...');
     try {
       let prompt = '';
@@ -261,7 +290,10 @@ export const Stage6: React.FC<Props> = ({ onComplete, playerName }) => {
            <textarea 
              disabled={step > 0 || isGeneratingText}
              value={rawText}
-             onChange={(e) => setRawText(e.target.value)}
+             onChange={(e) => {
+               setRawText(e.target.value);
+               setSourceLabel('学生自填文本');
+             }}
              className="w-full h-40 bg-black/50 border border-white/20 rounded-xl p-4 text-white resize-none focus:outline-none focus:border-brand-gold disabled:opacity-50"
              placeholder="请将你需要分析的一段新闻、故事或者作文粘贴到这里..."
            />
@@ -420,7 +452,19 @@ export const Stage6: React.FC<Props> = ({ onComplete, playerName }) => {
            </div>
            <Button onClick={() => {
              const imgData = canvasRef.current?.toDataURL('image/png');
-             onComplete(50, { finalWordFreq: wordFreq, wordCloudImage: imgData });
+             const { articleTitle, articleBody } = parseArticleContent();
+             onComplete(50, {
+               sourceLabel,
+               articleTitle,
+               articleBody,
+               rawTextFull: rawText,
+               rawTextPreview: articleBody.slice(0, 180),
+               segmentedWords: words,
+               cleanedWords: cleaned,
+               finalWordFreq: wordFreq,
+               wordCloudImage: imgData,
+               generatedBy: playerName,
+             });
            }} className="mt-8 px-10 py-4 text-xl">
               进入终极试炼（知识测验） 🏆
            </Button>
