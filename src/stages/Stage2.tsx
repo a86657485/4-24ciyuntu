@@ -12,10 +12,11 @@ interface Props {
 interface SliceGameProps {
   sentence: string;
   correctSlices: number[];
+  lineBreakAfter?: number[];
   onFinish: (score: number, details: any) => void;
 }
 
-const SliceGame: React.FC<SliceGameProps> = ({ sentence, correctSlices, onFinish }) => {
+const SliceGame: React.FC<SliceGameProps> = ({ sentence, correctSlices, lineBreakAfter = [], onFinish }) => {
   const { triggerAI } = useAI();
   const [slices, setSlices] = useState<number[]>([]);
   const [errorIndex, setErrorIndex] = useState<number | null>(null);
@@ -24,6 +25,15 @@ const SliceGame: React.FC<SliceGameProps> = ({ sentence, correctSlices, onFinish
   const [failCount, setFailCount] = useState(0);
   const [showSolution, setShowSolution] = useState(false);
   const chars = sentence.split('');
+  const lineBreakSet = new Set(lineBreakAfter);
+  const rows = chars.reduce((acc: number[][], _char, index) => {
+    const current = acc[acc.length - 1];
+    current.push(index);
+    if (lineBreakSet.has(index) && index < chars.length - 1) {
+      acc.push([]);
+    }
+    return acc;
+  }, [[]] as number[][]).filter(row => row.length > 0);
 
   // Check win condition
   useEffect(() => {
@@ -65,8 +75,11 @@ const SliceGame: React.FC<SliceGameProps> = ({ sentence, correctSlices, onFinish
 
   return (
     <div className="bg-glass p-8 rounded-2xl w-full flex-1 flex flex-col items-center">
-       <div className="flex flex-wrap justify-center items-center gap-y-6 py-10 relative my-auto max-w-3xl">
-          {chars.map((char, i) => {
+       <div className="flex flex-col items-center gap-4 py-8 relative my-auto w-full max-w-full px-2">
+          {rows.map((row, rowIndex) => (
+            <div key={rowIndex} className="flex flex-nowrap justify-center items-center w-full max-w-full min-w-0 overflow-visible">
+              {row.map((i) => {
+             const char = chars[i];
              // Each chunk is colored differently if it's properly split
              const chunkIndex = slices.filter(s => s <= i).length;
              const isCompleteWord = chunksAreComplete(chunkIndex, slices, correctSlices);
@@ -75,7 +88,7 @@ const SliceGame: React.FC<SliceGameProps> = ({ sentence, correctSlices, onFinish
                <React.Fragment key={i}>
                   <motion.div 
                      animate={errorIndex === i ? { x: [-5, 5, -5, 5, 0] } : {}}
-                     className={`text-3xl sm:text-4xl font-bold p-3 rounded-xl transition-all shadow-sm cursor-default \${
+                     className={`shrink text-[clamp(1rem,2.2vw,2rem)] font-bold p-[clamp(0.28rem,0.8vw,0.65rem)] rounded-xl transition-all shadow-sm cursor-default \${
                        chunkIndex % 2 === 0 
                          ? 'bg-white/10 text-white border border-white/20' 
                          : 'bg-brand-gold/20 text-brand-gold border border-brand-gold/30'
@@ -87,7 +100,7 @@ const SliceGame: React.FC<SliceGameProps> = ({ sentence, correctSlices, onFinish
                   {i < chars.length - 1 && (
                     <div 
                       onClick={() => handleSlice(i)}
-                      className="w-6 h-16 sm:w-10 sm:h-20 flex items-center justify-center cursor-crosshair group relative z-10 mx-[-2px] transition-transform hover:scale-110"
+                      className="shrink w-[clamp(0.55rem,1.45vw,1.6rem)] h-[clamp(3rem,5vw,4.5rem)] flex items-center justify-center cursor-crosshair group relative z-10 mx-[-1px] transition-transform hover:scale-110"
                     >
                        {/* The visible slice mark */}
                        <div className={`w-[3px] h-[70%] transition-all rounded-full ${slices.includes(i) ? 'bg-brand-gold shadow-[0_0_15px_#FFD700] w-1' : 'bg-transparent group-hover:bg-brand-gold/60 group-hover:w-2 group-hover:h-[90%]'}`} />
@@ -135,7 +148,9 @@ const SliceGame: React.FC<SliceGameProps> = ({ sentence, correctSlices, onFinish
                   )}
                </React.Fragment>
              );
-          })}
+            })}
+          </div>
+        ))}
        </div>
     </div>
   );
@@ -193,6 +208,7 @@ export const Stage2: React.FC<Props> = ({ onComplete }) => {
                 <SliceGame 
                   sentence="唐僧骑马咚咚咚后面跟着孙悟空"
                   correctSlices={[1, 3, 6, 8, 10]}
+                  lineBreakAfter={[8]}
                   onFinish={handleLevel1}
                 />
               </div>
@@ -206,6 +222,7 @@ export const Stage2: React.FC<Props> = ({ onComplete }) => {
                 <SliceGame 
                   sentence="悟空拔出一根毫毛吹口仙气变出千百个小猴"
                   correctSlices={[1, 3, 5, 7, 8, 9, 11, 13, 16]}
+                  lineBreakAfter={[7]}
                   onFinish={handleLevel2}
                 />
               </div>

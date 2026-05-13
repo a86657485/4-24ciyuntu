@@ -61,13 +61,14 @@ export const PasswordLock: React.FC<PasswordLockProps> = ({ correctPassword, onU
           <div className="mt-8 pt-6 border-t border-white/10 w-full animate-fade-in">
             <p className="text-white/60 text-sm text-center mb-4">等待钥匙时，可以去前面的修炼场复习一下哦：</p>
             <div className="flex flex-wrap justify-center gap-2">
-              <button onClick={() => onJump(1)} className="bg-white/5 hover:bg-brand-cyan/20 text-white/80 py-1.5 px-3 rounded-lg text-xs transition-colors border border-white/10 hover:border-brand-cyan/50">1. 初探词云</button>
-              <button onClick={() => onJump(2)} className="bg-white/5 hover:bg-brand-cyan/20 text-white/80 py-1.5 px-3 rounded-lg text-xs transition-colors border border-white/10 hover:border-brand-cyan/50">2. 文本分词</button>
-              <button onClick={() => onJump(3)} className="bg-white/5 hover:bg-brand-cyan/20 text-white/80 py-1.5 px-3 rounded-lg text-xs transition-colors border border-white/10 hover:border-brand-cyan/50">3. 停用词清洗</button>
-              <button onClick={() => onJump(4)} className="bg-white/5 hover:bg-brand-cyan/20 text-white/80 py-1.5 px-3 rounded-lg text-xs transition-colors border border-white/10 hover:border-brand-cyan/50">4. 词频统计</button>
-              <button onClick={() => onJump(5)} className="bg-white/5 hover:bg-brand-cyan/20 text-white/80 py-1.5 px-3 rounded-lg text-xs transition-colors border border-white/10 hover:border-brand-cyan/50">5. 专属词云图</button>
+              <button onClick={() => onJump(1)} className="bg-white/5 hover:bg-brand-cyan/20 text-white/80 py-1.5 px-3 rounded-lg text-xs transition-colors border border-white/10 hover:border-brand-cyan/50">1. 初识词云图</button>
+              <button onClick={() => onJump(2)} className="bg-white/5 hover:bg-brand-cyan/20 text-white/80 py-1.5 px-3 rounded-lg text-xs transition-colors border border-white/10 hover:border-brand-cyan/50">2. 分词</button>
+              <button onClick={() => onJump(3)} className="bg-white/5 hover:bg-brand-cyan/20 text-white/80 py-1.5 px-3 rounded-lg text-xs transition-colors border border-white/10 hover:border-brand-cyan/50">3. 去废词</button>
+              <button onClick={() => onJump(4)} className="bg-white/5 hover:bg-brand-cyan/20 text-white/80 py-1.5 px-3 rounded-lg text-xs transition-colors border border-white/10 hover:border-brand-cyan/50">4. 算词频</button>
+              <button onClick={() => onJump(5)} className="bg-white/5 hover:bg-brand-cyan/20 text-white/80 py-1.5 px-3 rounded-lg text-xs transition-colors border border-white/10 hover:border-brand-cyan/50">5. 合并同义词</button>
+              <button onClick={() => onJump(6)} className="bg-white/5 hover:bg-brand-cyan/20 text-white/80 py-1.5 px-3 rounded-lg text-xs transition-colors border border-white/10 hover:border-brand-cyan/50">6. 生成</button>
               {stageName === "终极测验" && (
-                <button onClick={() => onJump(6)} className="bg-white/5 hover:bg-brand-cyan/20 text-white/80 py-1.5 px-3 rounded-lg text-xs transition-colors border border-white/10 hover:border-brand-cyan/50">6. 实战演练</button>
+                <button onClick={() => onJump(7)} className="bg-white/5 hover:bg-brand-cyan/20 text-white/80 py-1.5 px-3 rounded-lg text-xs transition-colors border border-white/10 hover:border-brand-cyan/50">7. 实战演练</button>
               )}
             </div>
           </div>

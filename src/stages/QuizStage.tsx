@@ -163,7 +163,7 @@ export const QuizStage: React.FC<Props> = ({ onComplete }) => {
 
       <div className="bg-glass p-8 rounded-2xl w-full flex flex-col items-center relative z-10 mb-48">
         <h2 className="text-3xl font-bold bg-gradient-to-br from-brand-gold to-[#FFF8DC] text-transparent bg-clip-text mb-2 text-center">
-          终极试炼：知识库测验
+          第八关：终极测验
         </h2>
         <p className="text-brand-cyan mb-8 text-center font-bold">
           第 {currentQ + 1} / {QUIZ_QUESTIONS.length} 题

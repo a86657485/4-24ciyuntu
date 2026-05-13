@@ -61,24 +61,36 @@ export const Outro: React.FC<Props> = ({ playerName, totalXP, stageResults }) =>
            
            <div className="space-y-2 mt-4 text-sm text-gray-400">
              <div className="flex justify-between">
-               <span>关卡1：认识词云</span>
+               <span>关卡1：初识词云图</span>
                <span>+{stageResults[0] || 0} XP</span>
              </div>
              <div className="flex justify-between">
-               <span>关卡2：文本分词</span>
+               <span>关卡2：分词</span>
                <span>+{stageResults[1] || 0} XP</span>
              </div>
              <div className="flex justify-between">
-               <span>关卡3：词频统计</span>
+               <span>关卡3：去废词</span>
                <span>+{stageResults[2] || 0} XP</span>
              </div>
              <div className="flex justify-between">
-               <span>关卡4：筛选有效词</span>
+               <span>关卡4：算词频</span>
                <span>+{stageResults[3] || 0} XP</span>
              </div>
              <div className="flex justify-between">
-               <span>关卡5：生成词云图</span>
+               <span>关卡5：合并同义词</span>
                <span>+{stageResults[4] || 0} XP</span>
+             </div>
+             <div className="flex justify-between">
+               <span>关卡6：生成</span>
+               <span>+{stageResults[5] || 0} XP</span>
+             </div>
+             <div className="flex justify-between">
+               <span>关卡7：实战演练</span>
+               <span>+{stageResults[6] || 0} XP</span>
+             </div>
+             <div className="flex justify-between">
+               <span>关卡8：终极测验</span>
+               <span>+{stageResults[7] || 0} XP</span>
              </div>
            </div>
         </motion.div>

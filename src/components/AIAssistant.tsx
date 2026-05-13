@@ -33,10 +33,10 @@ export const AIAssistant: React.FC<Props> = ({ messages, onSendMessage, isOpen, 
             initial={{ opacity: 0, y: 50, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 50, scale: 0.9 }}
-            className="bg-[#140A28] border-2 border-brand-gold rounded-2xl w-80 md:w-96 shadow-[0_10px_40px_rgba(0,0,0,0.8)] mb-4 flex flex-col overflow-hidden pointer-events-auto"
+            className="bg-[#140A28] border-2 border-brand-gold rounded-2xl w-80 md:w-96 shadow-[0_10px_40px_rgba(0,0,0,0.8)] mb-4 flex flex-col overflow-hidden pointer-events-none"
             style={{ maxHeight: '60vh' }}
           >
-             <div className="bg-brand-gold/20 p-3 border-b border-brand-gold/50 flex justify-between items-center shrink-0">
+             <div className="bg-brand-gold/20 p-3 border-b border-brand-gold/50 flex justify-between items-center shrink-0 pointer-events-auto">
                 <span className="font-bold text-brand-gold flex items-center gap-2">🐒 大圣助教</span>
                 <button onClick={() => setIsOpen(false)} className="text-white/50 hover:text-white text-xl leading-none">&times;</button>
              </div>
@@ -62,7 +62,7 @@ export const AIAssistant: React.FC<Props> = ({ messages, onSendMessage, isOpen, 
                 <div ref={endRef} />
              </div>
              
-             <div className="p-3 bg-black/40 border-t border-white/10 flex gap-2 shrink-0">
+             <div className="p-3 bg-black/40 border-t border-white/10 flex gap-2 shrink-0 pointer-events-auto">
                 <input 
                   value={input}
                   onChange={e => setInput(e.target.value)}

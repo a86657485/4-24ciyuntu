@@ -14,6 +14,7 @@ const FULL_TEXT = [
 
 interface Props {
   onComplete: (score: number, wordFreq: any) => void;
+  mode?: 'all' | 'clean' | 'merge';
 }
 
 const WORDS = [
@@ -43,7 +44,7 @@ const SYNONYMS = [
   { id: 's7', text: '棒子', target: 'bangzi' },
 ];
 
-export const Stage4: React.FC<Props> = ({ onComplete }) => {
+export const Stage4: React.FC<Props> = ({ onComplete, mode = 'all' }) => {
   const { triggerAI } = useAI();
   const [step, setStep] = useState(0);
   const [score, setScore] = useState(0);
@@ -53,19 +54,34 @@ export const Stage4: React.FC<Props> = ({ onComplete }) => {
   // Part A state
   const [remainingWords, setRemainingWords] = useState(WORDS);
   const [animatingId, setAnimatingId] = useState<number | null>(null);
-  const [animTarget, setAnimTarget] = useState<'trash' | 'chest' | null>(null);
+  const [animTarget, setAnimTarget] = useState<'trash' | 'chest' | 'error' | null>(null);
+  const [selectedWordId, setSelectedWordId] = useState<number | null>(null);
+  const [classificationLocked, setClassificationLocked] = useState(false);
 
   // Part B state
   const [selectedSyn, setSelectedSyn] = useState<string | null>(null);
   const [matchedSyns, setMatchedSyns] = useState<string[]>([]);
+  const cleanOnly = mode === 'clean';
+  const mergeOnly = mode === 'merge';
+
+  const summaryTitle = cleanOnly ? '去废词完成' : mergeOnly ? '合并同义词完成' : '有效词三原则';
+  const scienceTitle = cleanOnly ? '【科学小知识：去废词】' : mergeOnly ? '【科学小知识：合并同义词】' : '【科学小知识：词频统计与清洗】';
+  const scienceText = cleanOnly
+    ? <>在生成词云图前，要先把<b>停用词</b>（没有实际意义、容易干扰判断的词）清理掉，保留真正能表达内容的关键词。</>
+    : mergeOnly
+      ? <>同一个角色或事物可能有多个叫法。把<b>同义词</b>和<b>近义词</b>合并到一起，词频统计才会更准确。</>
+      : <>把所有的词数一数，这就是<b>“词频统计”</b>。但为了让词云图更准确，我们还得把<b>停用词</b>（没意义的词）扔掉，并且把<b>近义词</b>（意思相同的词）合并到一起。这样，最重要的信息才会变得最显眼！</>;
 
   useEffect(() => {
-    setTimeout(() => setStep(1), 3000);
-  }, []);
+    setTimeout(() => setStep(mergeOnly ? 2 : 1), 3000);
+  }, [mergeOnly]);
 
   const handleClassify = (id: number, target: 'stop' | 'valid', uTarget: 'trash' | 'chest') => {
+    if (classificationLocked || animatingId !== null) return;
     const word = remainingWords.find(w => w.id === id);
     if (!word) return;
+    setClassificationLocked(true);
+    setSelectedWordId(null);
 
     if (word.type === target) {
       playSuccess();
@@ -76,31 +92,35 @@ export const Stage4: React.FC<Props> = ({ onComplete }) => {
         setRemainingWords(prev => prev.filter(w => w.id !== id));
         setAnimatingId(null);
         setAnimTarget(null);
+        setClassificationLocked(false);
       }, 500);
     } else {
       playError();
       setAnimatingId(id);
       setAnimTarget('error');
-      const nextFails = failCountA + 1;
-      setFailCountA(nextFails);
-      if (nextFails >= 3) {
-        triggerAI('别灰心，俺老孙施法把剩下的词都放对位置了！仔细看看分类规律。');
-        setRemainingWords([]);
-      } else {
-        triggerAI('分类错啦！再想想，“' + word.text + '”在句子中是必不可少的关键词，还是没有实义的虚词？');
-      }
+      setFailCountA(prev => {
+        const nextFails = prev + 1;
+        if (nextFails >= 3) {
+          triggerAI('别急，先别连续点。停用词通常是“的、了、在、是”这类作用小的词；有效词通常是人物、地点、物品或动作。选中一个词后，慢慢判断它该去哪里。');
+        } else {
+          triggerAI('分类错啦！再想想，“' + word.text + '”在句子中是必不可少的关键词，还是没有实义的虚词？');
+        }
+        return nextFails;
+      });
       setTimeout(() => {
         setAnimatingId(null);
         setAnimTarget(null);
+        setClassificationLocked(false);
       }, 500);
     }
   };
 
   useEffect(() => {
     if (step === 1 && remainingWords.length === 0) {
-      setTimeout(() => setStep(2), 1500);
+      setSelectedWordId(null);
+      setTimeout(() => setStep(cleanOnly ? 3 : 2), 1500);
     }
-  }, [remainingWords, step]);
+  }, [remainingWords, step, cleanOnly]);
 
   const handleSynClick = (id: string, targetId: string) => {
     if (selectedSyn === id) {
@@ -140,30 +160,46 @@ export const Stage4: React.FC<Props> = ({ onComplete }) => {
     }
   }, [matchedSyns, step]);
 
+  const completeStage = () => {
+    const mergedWordFreq = {
+      '悟空': 15,
+      '法术': 8,
+      '金箍棒': 10,
+      '天宫': 6,
+      '妖怪': 4,
+    };
+
+    onComplete(score, {
+      ...(mergeOnly || mode === 'all' ? mergedWordFreq : {}),
+      mode,
+      failCountClassify: failCountA,
+      failCountSynonyms: failCountB,
+    });
+  };
+
   return (
     <div className="flex flex-col items-center max-w-6xl mx-auto py-8 min-h-[500px]">
       <div className="w-full absolute bottom-10 left-0 px-4 md:px-10 z-20 pointer-events-none">
         <MonkeyDialog 
-          text={step === 1 ? "光统计还不够，要挑出真正有用的词！把没用的丢垃圾桶，有用的放进宝箱！" : step === 2 ? "有时候同一个角色有不同的名字，我们要把它们合并起来才算得准！" : ""}
+          text={step === 1 ? "现在进入去废词，把没用的停用词丢掉，把真正有意义的词留下来！" : step === 2 ? "同一个角色可能有不同名字，合并同义词后，词频才会算得更准！" : ""}
           show={step < 3}
         />
       </div>
 
       <div className="w-full max-w-4xl mt-8 flex flex-col items-center mb-48 z-10 relative">
         <div className="bg-brand-cyan/10 border border-brand-cyan/20 rounded-xl p-4 mb-6 w-full">
-          <p className="text-sm text-brand-cyan font-bold mb-2">【科学小知识：词频统计与清洗】</p>
+          <p className="text-sm text-brand-cyan font-bold mb-2">{scienceTitle}</p>
           <p className="text-xs text-white/70 leading-relaxed">
-            把所有的词数一数，这就是<b>“词频统计”</b>。但为了让词云图更准确，我们还得把<b>停用词</b>（没意义的词）扔掉，
-            并且把<b>近义词</b>（意思相同的词）合并到一起。这样，最重要的信息才会变得最显眼！
+            {scienceText}
           </p>
         </div>
 
         {/* Part A: Stop words cleaning */}
         {step === 1 && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full flex flex-col items-center gap-8">
-             <h2 className="text-3xl font-bold bg-gradient-to-br from-brand-gold to-[#FFF8DC] text-transparent bg-clip-text mb-4 text-center">分类挑战</h2>
+             <h2 className="text-3xl font-bold bg-gradient-to-br from-brand-gold to-[#FFF8DC] text-transparent bg-clip-text mb-4 text-center">去废词挑战</h2>
              
-             <div className="flex flex-wrap justify-center gap-4 min-h-[140px] px-4">
+             <div className="flex flex-wrap justify-center gap-x-4 gap-y-16 min-h-[180px] px-4 pb-12">
                 <AnimatePresence>
                    {remainingWords.map(w => (
                      <motion.div
@@ -180,15 +216,44 @@ export const Stage4: React.FC<Props> = ({ onComplete }) => {
                        exit={{ opacity: 0, scale: 0 }}
                        className="relative"
                      >
-                       <div className="px-6 py-4 bg-glass text-xl font-bold hover:border-brand-gold cursor-default group transition-colors">
+                       <div
+                         onClick={() => {
+                           if (classificationLocked || animatingId !== null) return;
+                           setSelectedWordId(prev => prev === w.id ? null : w.id);
+                         }}
+                         className={`px-6 py-4 bg-glass text-xl font-bold border transition-colors cursor-pointer select-none ${
+                           selectedWordId === w.id
+                             ? 'border-brand-gold shadow-[0_0_18px_rgba(255,215,0,0.35)] bg-brand-gold/10'
+                             : 'border-white/10 hover:border-brand-gold/60 hover:bg-white/10'
+                         }`}
+                       >
                           {w.text}
-                          
-                          {/* Action buttons (Mobile friendly instead of drag) */}
-                          <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-20">
-                             <button onClick={(e) => { e.stopPropagation(); handleClassify(w.id, 'stop', 'trash'); }} className="bg-brand-red text-white text-xs px-3 py-2 rounded-xl shadow-md border border-white/20">🗑️ 停用</button>
-                             <button onClick={(e) => { e.stopPropagation(); handleClassify(w.id, 'valid', 'chest'); }} className="bg-brand-gold text-black text-xs px-3 py-2 rounded-xl shadow-md font-bold">⭐ 有效</button>
-                          </div>
                        </div>
+                       <AnimatePresence>
+                         {selectedWordId === w.id && (
+                           <motion.div
+                             initial={{ opacity: 0, y: -4, scale: 0.96 }}
+                             animate={{ opacity: 1, y: 0, scale: 1 }}
+                             exit={{ opacity: 0, y: -4, scale: 0.96 }}
+                             className="absolute -bottom-12 left-1/2 -translate-x-1/2 flex gap-2 whitespace-nowrap z-30"
+                           >
+                             <button
+                               disabled={classificationLocked}
+                               onClick={(e) => { e.stopPropagation(); handleClassify(w.id, 'stop', 'trash'); }}
+                               className="bg-brand-red text-white text-xs px-4 py-2 rounded-xl shadow-md border border-white/20 disabled:opacity-50 disabled:cursor-wait"
+                             >
+                               🗑️ 停用
+                             </button>
+                             <button
+                               disabled={classificationLocked}
+                               onClick={(e) => { e.stopPropagation(); handleClassify(w.id, 'valid', 'chest'); }}
+                               className="bg-brand-gold text-black text-xs px-4 py-2 rounded-xl shadow-md font-bold disabled:opacity-50 disabled:cursor-wait"
+                             >
+                               ⭐ 有效
+                             </button>
+                           </motion.div>
+                         )}
+                       </AnimatePresence>
                      </motion.div>
                    ))}
                 </AnimatePresence>
@@ -221,7 +286,7 @@ export const Stage4: React.FC<Props> = ({ onComplete }) => {
         {/* Part B: Synonyms */}
         {step === 2 && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full mt-8 flex flex-col items-center gap-12 bg-glass p-10 rounded-2xl">
-             <h3 className="text-2xl font-bold bg-gradient-to-br from-brand-gold to-[#FFF8DC] text-transparent bg-clip-text mb-4">先点击词语，再点击对应的人物头像连线</h3>
+             <h3 className="text-2xl font-bold bg-gradient-to-br from-brand-gold to-[#FFF8DC] text-transparent bg-clip-text mb-4">合并同义词：先点词语，再点对应的人物头像</h3>
              
              {/* Words array */}
              <div className="flex flex-wrap justify-center gap-4">
@@ -280,13 +345,23 @@ export const Stage4: React.FC<Props> = ({ onComplete }) => {
         {step === 3 && (
           <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="mt-8 bg-glass border-2 border-brand-gold p-10 rounded-2xl max-w-xl text-center w-full">
              <div className="text-5xl mb-4">✨</div>
-             <h3 className="text-2xl font-bold bg-gradient-to-br from-brand-gold to-[#FFF8DC] text-transparent bg-clip-text mb-6">有效词三原则</h3>
+             <h3 className="text-2xl font-bold bg-gradient-to-br from-brand-gold to-[#FFF8DC] text-transparent bg-clip-text mb-6">{summaryTitle}</h3>
              <ul className="text-lg mb-8 text-white/80 space-y-3 font-medium">
-               <li>✓ 去除无用的停用词</li>
-               <li>✓ 合并指代相同角色的近义词</li>
-               <li>✓ 保留重要的名词和动词</li>
+               {cleanOnly ? (
+                 <>
+                   <li>✓ 去除无用的停用词</li>
+                   <li>✓ 保留重要的名词和动词</li>
+                   <li>✓ 为后续词频统计减少干扰</li>
+                 </>
+               ) : (
+                 <>
+                   <li>✓ 合并指代相同角色的近义词</li>
+                   <li>✓ 让同一事物的词频集中计算</li>
+                   <li>✓ 生成更准确、更清晰的词云图</li>
+                 </>
+               )}
              </ul>
-             <Button onClick={() => onComplete(score, { '悟空': 15, '法术': 8, '金箍棒': 10, '天宫': 6, '妖怪': 4, failCountClassify: failCountA, failCountSynonyms: failCountB })} className="w-full">继续冒险 →</Button>
+             <Button onClick={completeStage} className="w-full">继续冒险 →</Button>
           </motion.div>
         )}
 

@@ -12,8 +12,25 @@ interface Props {
   onComplete: (score: number, cloudWords: {text: string, count: number}[]) => void;
 }
 
+const normalizeWordFreq = (value: any) => {
+  const source = value?.wordFrequencies && typeof value.wordFrequencies === 'object'
+    ? value.wordFrequencies
+    : value;
+
+  if (!source || typeof source !== 'object') {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(source)
+      .map(([word, count]) => [word, Number(count)] as [string, number])
+      .filter((entry): entry is [string, number] => Number.isFinite(entry[1]) && entry[1] > 0)
+  ) as Record<string, number>;
+};
+
 export const Stage5: React.FC<Props> = ({ wordFreq, playerName, onComplete }) => {
   const { triggerAI } = useAI();
+  const safeWordFreq = normalizeWordFreq(wordFreq);
   const [step, setStep] = useState(0);
   const [score, setScore] = useState(0);
   
@@ -42,7 +59,7 @@ export const Stage5: React.FC<Props> = ({ wordFreq, playerName, onComplete }) =>
     
     setTimeout(() => {
       if (canvasRef.current) {
-        const words = Object.keys(wordFreq).map(k => ({ text: k, count: wordFreq[k] }));
+        const words = Object.keys(safeWordFreq).map(k => ({ text: k, count: safeWordFreq[k] }));
         // Add some more padding words to make cloud look good
         words.push({ text: '金箍棒', count: 12 });
         words.push({ text: '取经', count: 9 });
@@ -76,7 +93,7 @@ export const Stage5: React.FC<Props> = ({ wordFreq, playerName, onComplete }) =>
       const key = process.env.GEMINI_API_KEY;
       if (!key) throw new Error("API key missing");
       
-      const words = Object.keys(wordFreq).map(k => `${k}: ${wordFreq[k]}`).join(', ');
+      const words = Object.keys(safeWordFreq).map(k => `${k}: ${safeWordFreq[k]}`).join(', ');
       const prompt = `学生【${playerName}】是四年级小学生，刚刚完成了第一张词云图。词云数据：${words}。请用孙悟空的语气，给出50字以内的鼓励评价，指出词云图反映出的主角信息，并提一个改进建议。不要使用markdown格式发声。`;
       
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
@@ -99,7 +116,7 @@ export const Stage5: React.FC<Props> = ({ wordFreq, playerName, onComplete }) =>
   };
 
   const getFinalWords = () => {
-     return Object.keys(wordFreq).map(k => ({ text: k, count: wordFreq[k] }));
+     return Object.keys(safeWordFreq).map(k => ({ text: k, count: safeWordFreq[k] }));
   };
 
   return (
@@ -138,12 +155,12 @@ export const Stage5: React.FC<Props> = ({ wordFreq, playerName, onComplete }) =>
                    <span>出现频率</span>
                 </div>
                 
-                {Object.keys(wordFreq).map((k, idx) => (
+                {Object.keys(safeWordFreq).map((k, idx) => (
                   <div key={k} className="flex justify-between items-center px-6 py-4 bg-white/5 hover:border-brand-gold/50 rounded-xl border border-white/10 transition-colors">
                      <span className="font-bold text-xl">{k}</span>
                      <div className="flex items-center gap-2">
                        <span className={`text-2xl font-bold ${idx === 0 ? 'text-brand-gold' : 'text-brand-cyan'}`}>
-                         {wordFreq[k]}
+                         {safeWordFreq[k]}
                        </span>
                        <span className="text-white/60">次</span>
                      </div>
@@ -190,7 +207,7 @@ export const Stage5: React.FC<Props> = ({ wordFreq, playerName, onComplete }) =>
              {!isGenerating && step === 2 && (
                <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="mt-8">
                   <Button onClick={() => onComplete(score, getFinalWords())} className="px-8 py-4 text-lg bg-gradient-to-r from-brand-cyan to-brand-gold border-none font-bold shadow-[0_0_20px_rgba(255,215,0,0.4)]">
-                    前往第六关：实战演练体验！ →
+                    前往第七关：实战演练体验！ →
                   </Button>
                </motion.div>
              )}

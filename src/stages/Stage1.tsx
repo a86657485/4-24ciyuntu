@@ -117,7 +117,7 @@ export const Stage1: React.FC<Props> = ({ onComplete }) => {
       
       {/* Game Card Left: Explore */}
       <div className="flex-1 bg-glass p-8 rounded-2xl flex flex-col relative z-10 w-full mb-48 lg:mb-0">
-        <h2 className="text-3xl font-bold bg-gradient-to-br from-brand-gold to-[#FFF8DC] text-transparent bg-clip-text mb-2">🌟 探索天庭词云图</h2>
+        <h2 className="text-3xl font-bold bg-gradient-to-br from-brand-gold to-[#FFF8DC] text-transparent bg-clip-text mb-2">🌟 初识词云图</h2>
         <div className="bg-brand-cyan/10 border border-brand-cyan/20 rounded-lg p-3 mb-4">
           <p className="text-xs text-brand-cyan font-bold mb-1">【科学小知识：什么是词云？】</p>
           <p className="text-[10px] text-white/70 leading-relaxed">

@@ -120,17 +120,17 @@ export const Stage3: React.FC<Props> = ({ onComplete }) => {
     <div className="flex flex-col items-center max-w-6xl mx-auto py-8 min-h-[500px]">
       <div className="w-full absolute bottom-10 left-0 px-4 md:px-10 z-20 pointer-events-none">
         <MonkeyDialog 
-          text={step < 2 ? "词语切好了，现在要数每个词出现了多少次！帮俺数数这几样东西出现了几次！" : "看到区别了吗？如果把'的'、'了'这种停用词也算进去，就像取经路上的拦路石，重点都不突出了！"}
+          text={step < 2 ? "词语切好了，现在要数每个关键词出现了多少次！帮俺把词频统计表填完整！" : "词频统计完成后，哪些词最重要就一眼能看出来了！"}
           show={true}
         />
       </div>
 
       <div className="w-full max-w-5xl mt-8 flex flex-col mb-48 z-10 relative">
         <div className="bg-brand-cyan/10 border border-brand-cyan/20 rounded-xl p-4 mb-6">
-          <p className="text-sm text-brand-cyan font-bold mb-2">【科学小知识：过滤清洗】</p>
+          <p className="text-sm text-brand-cyan font-bold mb-2">【科学小知识：算词频】</p>
           <p className="text-xs text-white/70 leading-relaxed">
-            在一段文字里，有些词（比如“的”、“了”、“是”）虽然出现次数很多，但并没有实际含义。
-            我们把这些词叫做<b>“停用词”</b>。在生成词云图之前，必须通过“过滤清洗”把它们扔掉，才能让真正的核心词显现出来！
+            把清洗后的关键词逐个数一数，记录每个词出现了多少次，这个过程叫做<b>“词频统计”</b>。
+            词频越高，后面生成词云图时字号通常就越大。
           </p>
         </div>
 
@@ -138,7 +138,7 @@ export const Stage3: React.FC<Props> = ({ onComplete }) => {
           <div className="w-full flex flex-col lg:flex-row gap-8">
              {/* Left area: Text cloud */}
              <div className="flex-[2] bg-glass p-8 rounded-2xl relative">
-                <h3 className="text-2xl font-bold bg-gradient-to-br from-brand-gold to-[#FFF8DC] text-transparent bg-clip-text mb-6">点击找出目标词语</h3>
+                <h3 className="text-2xl font-bold bg-gradient-to-br from-brand-gold to-[#FFF8DC] text-transparent bg-clip-text mb-6">点击统计目标词语</h3>
                 <div className="flex flex-wrap gap-4 py-4 content-start">
                    {TEXT_CHUNK.map((word, idx) => {
                      const isTarget = TARGETS.find(t => t.word === word);
@@ -170,7 +170,7 @@ export const Stage3: React.FC<Props> = ({ onComplete }) => {
 
              {/* Right area: Table */}
              <div className="flex-1 bg-glass p-8 rounded-2xl">
-                <h3 className="text-2xl font-bold text-center mb-6 border-b border-white/10 pb-4">统计进度表</h3>
+                <h3 className="text-2xl font-bold text-center mb-6 border-b border-white/10 pb-4">词频统计表</h3>
                 <div className="space-y-6">
                    {TARGETS.map(t => {
                      const current = counts[t.word] || 0;

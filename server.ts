@@ -1,10 +1,14 @@
 import express from "express";
 import Database from "better-sqlite3";
+import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import path from "path";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.join(__dirname, ".env.local") });
+dotenv.config({ path: path.join(__dirname, ".env") });
 
 const db = new Database("learning_records.sqlite", { verbose: console.log });
 
@@ -22,17 +26,31 @@ db.exec(`
 `);
 
 const STAGE_META = [
-  { id: 1, name: "初识词云", shortName: "词云认知" },
-  { id: 2, name: "文本分词", shortName: "分词训练" },
-  { id: 3, name: "过滤清洗与归类", shortName: "过滤归类" },
-  { id: 4, name: "词频统计", shortName: "词频统计" },
-  { id: 5, name: "生成词云图", shortName: "词云生成" },
-  { id: 6, name: "实战演练", shortName: "实战应用" },
-  { id: 7, name: "知识测验", shortName: "知识测验" },
+  { id: 1, name: "初始流程图", shortName: "初始流程图" },
+  { id: 2, name: "分词", shortName: "分词" },
+  { id: 3, name: "去废词", shortName: "去废词" },
+  { id: 4, name: "算词频", shortName: "算词频" },
+  { id: 5, name: "合并同义词", shortName: "合并同义词" },
+  { id: 6, name: "生成", shortName: "生成" },
+  { id: 7, name: "实战演练", shortName: "实战演练" },
+  { id: 8, name: "终极测验", shortName: "终极测验" },
 ] as const;
 
 type StageId = (typeof STAGE_META)[number]["id"];
 type AnyRecord = Record<string, any>;
+
+const STAGE_MAX_SCORE: Record<StageId, number> = {
+  1: 30,
+  2: 112,
+  3: 70,
+  4: 30,
+  5: 56,
+  6: 20,
+  7: 50,
+  8: 150,
+};
+
+const TOTAL_MAX_SCORE = Object.values(STAGE_MAX_SCORE).reduce((total, current) => total + current, 0);
 
 type RawRow = {
   id: number;
@@ -139,6 +157,37 @@ const getStage6Detail = (details: AnyRecord = {}) => {
   };
 };
 
+const looksLikeStage6Detail = (details: any) => {
+  return Boolean(
+    details &&
+    typeof details === "object" &&
+    !Array.isArray(details) &&
+    (
+      details.articleBody ||
+      details.rawTextFull ||
+      details.wordCloudImage ||
+      Array.isArray(details.finalWordFreq)
+    )
+  );
+};
+
+const getRowMaxScore = (row: ParsedRow) => {
+  if (row.stage === 6 && looksLikeStage6Detail(row.details)) {
+    return STAGE_MAX_SCORE[7];
+  }
+  return STAGE_MAX_SCORE[row.stage as StageId] || 0;
+};
+
+const clampScore = (score: number, maxScore: number) => {
+  if (maxScore <= 0) return 0;
+  return Math.min(Math.max(Number(score) || 0, 0), maxScore);
+};
+
+const toPercentScore = (score: number, maxScore: number) => {
+  if (maxScore <= 0) return 0;
+  return Math.round((clampScore(score, maxScore) / maxScore) * 100);
+};
+
 const getQuizRecords = (details: any) => {
   return Array.isArray(details) ? details : [];
 };
@@ -180,12 +229,12 @@ const buildStageInsight = (row: ParsedRow) => {
   }
 
   if (row.stage === 3) {
-    const validWords = Object.entries(details || {}).filter(([key, value]) => !key.startsWith("failCount") && typeof value === "number");
+    const classifyFails = Number(details?.failCountClassify) || row.failCount || 0;
     return {
-      tags: [`有效词 ${validWords.length} 个`, `分类失误 ${row.failCount} 次`],
-      note: validWords.length > 0
-        ? `完成停用词清洗与近义词归并，共提炼 ${validWords.length} 个有效关键词。`
-        : "完成过滤归类关卡，但未提取到有效词统计。",
+      tags: ["去废词完成", `分类失误 ${classifyFails} 次`],
+      note: classifyFails > 0
+        ? `完成停用词筛选，经历 ${classifyFails} 次分类修正后保留有效关键词。`
+        : "完成停用词筛选，能较顺畅地区分停用词和有效词。",
       rawSummary: details,
     };
   }
@@ -203,6 +252,31 @@ const buildStageInsight = (row: ParsedRow) => {
   }
 
   if (row.stage === 5) {
+    const validWords = Object.entries(details || {}).filter(([key, value]) => !key.startsWith("failCount") && typeof value === "number");
+    const topWord = validWords.sort((a, b) => Number(b[1]) - Number(a[1]))[0];
+    return {
+      tags: [`合并词项 ${validWords.length} 个`, `同义词失误 ${Number(details?.failCountSynonyms) || 0} 次`],
+      note: topWord
+        ? `完成同义词合并，归并后的最高频词为“${topWord[0]}”，出现 ${topWord[1]} 次。`
+        : "完成同义词合并关卡，但未找到合并后的词频结果。",
+      rawSummary: details,
+    };
+  }
+
+  if (row.stage === 6) {
+    if (looksLikeStage6Detail(details)) {
+      const stage6 = getStage6Detail(details);
+      const words = stage6.finalWordFreq;
+      const topWords = getTopWords(words, 5);
+      return {
+        tags: [`旧实战词项 ${words.length} 个`, stage6.articleTitle ? `文章：${stage6.articleTitle}` : "自主分析"],
+        note: topWords.length > 0
+          ? `旧编号实战记录：最终高频词为 ${topWords.map((item) => item.text).join("、")}。`
+          : "旧编号实战记录已保留，但词频结果较少。",
+        rawSummary: stage6,
+      };
+    }
+
     const words = Array.isArray(details) ? details : [];
     const topWords = getTopWords(words, 5);
     return {
@@ -214,7 +288,7 @@ const buildStageInsight = (row: ParsedRow) => {
     };
   }
 
-  if (row.stage === 6) {
+  if (row.stage === 7) {
     const stage6 = getStage6Detail(details);
     const words = stage6.finalWordFreq;
     const topWords = getTopWords(words, 5);
@@ -227,7 +301,7 @@ const buildStageInsight = (row: ParsedRow) => {
     };
   }
 
-  if (row.stage === 7) {
+  if (row.stage === 8) {
     const quizSummary = getQuizSummary(details);
     return {
       tags: [`正确率 ${quizSummary.accuracy}%`, `答对 ${quizSummary.correct}/${quizSummary.total}`],
@@ -247,11 +321,17 @@ const buildStageInsight = (row: ParsedRow) => {
 
 const buildStudentEvaluation = (stageMap: Map<number, ParsedRow>, totalScore: number, totalFails: number) => {
   const completedStages = Array.from(stageMap.keys()).length;
-  const quizSummary = stageMap.get(7) ? getQuizSummary(stageMap.get(7)?.details) : null;
-  const stage6Words = Array.isArray(stageMap.get(6)?.details?.finalWordFreq) ? stageMap.get(6)?.details?.finalWordFreq : [];
+  const quizSummary = stageMap.get(8) ? getQuizSummary(stageMap.get(8)?.details) : null;
+  const stage7Details = stageMap.get(7)?.details;
+  const legacyStage6Details = stageMap.get(6)?.details;
+  const stage6Words = Array.isArray(stage7Details?.finalWordFreq)
+    ? stage7Details.finalWordFreq
+    : Array.isArray(legacyStage6Details?.finalWordFreq)
+      ? legacyStage6Details.finalWordFreq
+      : [];
   const topWords = getTopWords(stage6Words, 3);
 
-  const processText = completedStages >= 7
+  const processText = completedStages >= STAGE_META.length
     ? "学习路径完整，已经完成从词云认知到自主实战再到知识测验的完整闭环。"
     : `当前已完成 ${completedStages} 个阶段，学习过程仍在推进中，建议继续补齐后续关卡以形成完整能力链。`;
 
@@ -295,7 +375,9 @@ const aggregateDashboardData = (rows: ParsedRow[]) => {
       latestStageMap.set(row.stage, row);
     }
 
-    const totalScore = sum(Array.from(latestStageMap.values()).map((row) => row.score));
+    const rawTotalScore = sum(Array.from(latestStageMap.values()).map((row) => row.score));
+    const weightedScore = sum(Array.from(latestStageMap.values()).map((row) => clampScore(row.score, getRowMaxScore(row))));
+    const totalScore = TOTAL_MAX_SCORE > 0 ? Math.round((weightedScore / TOTAL_MAX_SCORE) * 100) : 0;
     const totalFails = sum(Array.from(latestStageMap.values()).map((row) => row.failCount));
     const latestRow = sortedRows[sortedRows.length - 1];
     const completedStages = latestStageMap.size;
@@ -308,6 +390,9 @@ const aggregateDashboardData = (rows: ParsedRow[]) => {
           shortName: stage.shortName,
           status: "未完成",
           score: 0,
+          scorePercent: 0,
+          rawScore: 0,
+          maxScore: STAGE_MAX_SCORE[stage.id],
           failCount: 0,
           timestamp: "",
           note: "该阶段暂无提交记录。",
@@ -317,13 +402,18 @@ const aggregateDashboardData = (rows: ParsedRow[]) => {
       }
 
       const insight = buildStageInsight(row);
+      const maxScore = getRowMaxScore(row);
+      const scorePercent = toPercentScore(row.score, maxScore);
 
       return {
         stageId: stage.id,
         stageName: stage.name,
         shortName: stage.shortName,
         status: getStageStatusLabel(row.failCount),
-        score: row.score,
+        score: scorePercent,
+        scorePercent,
+        rawScore: row.score,
+        maxScore,
         failCount: row.failCount,
         timestamp: row.timestamp,
         note: insight.note,
@@ -332,18 +422,26 @@ const aggregateDashboardData = (rows: ParsedRow[]) => {
       };
     });
 
-    const stage6 = latestStageMap.get(6);
     const stage7 = latestStageMap.get(7);
-    const quizSummary = stage7 ? getQuizSummary(stage7.details) : { total: 0, correct: 0, wrong: 0, accuracy: 0 };
-    const stage6Detail = stage6 ? getStage6Detail(stage6.details) : getStage6Detail({});
+    const stage8 = latestStageMap.get(8);
+    const quizSummary = stage8 ? getQuizSummary(stage8.details) : { total: 0, correct: 0, wrong: 0, accuracy: 0 };
+    const legacyStage6 = latestStageMap.get(6);
+    const stage6Detail = stage7 && looksLikeStage6Detail(stage7.details)
+      ? getStage6Detail(stage7.details)
+      : legacyStage6 && looksLikeStage6Detail(legacyStage6.details)
+        ? getStage6Detail(legacyStage6.details)
+        : getStage6Detail({});
     const stage6Words = stage6Detail.finalWordFreq;
-    const stage7Records = stage7 ? getQuizRecords(stage7.details) : [];
+    const stage7Records = stage8 ? getQuizRecords(stage8.details) : [];
 
     return {
       playerName,
       submissionCount: sortedRows.length,
       completedStages,
       totalScore,
+      rawTotalScore: weightedScore,
+      actualRawTotalScore: rawTotalScore,
+      maxTotalScore: TOTAL_MAX_SCORE,
       totalFails,
       latestTimestamp: latestRow?.timestamp || "",
       latestStage: latestRow?.stage || 0,
@@ -408,7 +506,7 @@ const adminHtml = () => `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>学生学习目录</title>
+  <title>词云图闯关数据中心</title>
   <style>
     :root {
       --bg: #050c18;
@@ -519,6 +617,14 @@ const adminHtml = () => `<!DOCTYPE html>
       color: white;
       box-shadow: 0 10px 24px rgba(18, 103, 255, 0.26);
     }
+    .danger-btn {
+      background: linear-gradient(135deg, #ff7b91, #c94b55);
+      box-shadow: 0 10px 24px rgba(201, 75, 85, 0.24);
+    }
+    .danger-btn[disabled] {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
     .metrics {
       display: flex;
       flex-wrap: wrap;
@@ -624,6 +730,22 @@ const adminHtml = () => `<!DOCTYPE html>
       font-size: 20px;
       font-weight: 900;
       line-height: 1.15;
+    }
+    .student-name-button {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+      padding: 0;
+      color: var(--ink);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .student-name-button:hover {
+      color: var(--accent-deep);
+      text-decoration: underline;
+      text-underline-offset: 4px;
     }
     .mini {
       font-size: 12px;
@@ -792,20 +914,33 @@ const adminHtml = () => `<!DOCTYPE html>
     .article-body {
       white-space: pre-wrap;
       line-height: 1.78;
-      color: rgba(31, 41, 55, 0.84);
-      font-size: 14px;
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 500;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
     }
     .cloud-large {
-      border-radius: 20px;
-      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: min(100%, 820px);
+      height: clamp(220px, 44vh, 360px);
+      margin: 14px auto 0;
+      padding: 14px;
+      border-radius: 18px;
       border: 1px solid rgba(114, 211, 255, 0.12);
-      background: white;
-      margin-top: 14px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 250, 255, 0.96));
+      box-shadow: inset 0 0 0 1px rgba(4, 14, 28, 0.05), 0 18px 42px rgba(0, 0, 0, 0.22);
     }
     .cloud-large img {
-      width: 100%;
-      display: block;
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
       height: auto;
+      object-fit: contain;
+      display: block;
+      border-radius: 12px;
     }
     .word-box {
       min-height: 120px;
@@ -848,6 +983,57 @@ const adminHtml = () => `<!DOCTYPE html>
       background: rgba(7, 18, 34, 0.9);
       font-size: 13px;
       line-height: 1.65;
+    }
+    .stage-detail-grid {
+      display: grid;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .stage-detail-card {
+      border-radius: 18px;
+      border: 1px solid rgba(114, 211, 255, 0.12);
+      background: rgba(7, 18, 34, 0.9);
+      padding: 14px;
+    }
+    .stage-detail-card.pending {
+      opacity: 0.68;
+    }
+    .stage-detail-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .stage-detail-title {
+      font-size: 17px;
+      font-weight: 900;
+      line-height: 1.35;
+    }
+    .stage-status {
+      flex: 0 0 auto;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(126, 247, 212, 0.10);
+      color: var(--gold);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .stage-detail-card.pending .stage-status {
+      background: rgba(129, 160, 191, 0.12);
+      color: var(--muted);
+    }
+    .stage-detail-metrics, .stage-tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .stage-note {
+      color: rgba(233, 246, 255, 0.74);
+      font-size: 13px;
+      line-height: 1.72;
     }
     .quiz-list {
       display: grid;
@@ -910,8 +1096,11 @@ const adminHtml = () => `<!DOCTYPE html>
     <section class="toolbar">
       <div class="panel toolbar-main">
         <div class="title-row">
-          <h1>学生学习目录</h1>
-          <button id="refreshBtn">刷新</button>
+          <h1>词云图闯关数据中心</h1>
+          <div class="toolbar-actions">
+            <button id="refreshBtn">刷新</button>
+            <button id="clearAllBtn" class="danger-btn" type="button">清除所有数据</button>
+          </div>
         </div>
         <div class="subline">按姓名查找、按姓名排序，点击词云图或文章按钮查看详细内容。</div>
       </div>
@@ -949,7 +1138,7 @@ const adminHtml = () => `<!DOCTYPE html>
           <div>学生姓名</div>
           <div>词云图</div>
           <div>进度</div>
-          <div>总分</div>
+          <div>总分（百分制）</div>
           <div>测验正确率</div>
           <div>文章内容</div>
           <div>测验明细</div>
@@ -998,8 +1187,8 @@ const adminHtml = () => `<!DOCTYPE html>
     const renderMetrics = function(metrics) {
       const items = [
         { label: '学生人数', value: metrics.totalStudents, note: '按姓名聚合' },
-        { label: '完整通关', value: metrics.completedStudents, note: '完成 7 关' },
-        { label: '平均总分', value: metrics.avgScore, note: '最新记录汇总' },
+        { label: '完整通关', value: metrics.completedStudents, note: '完成 8 关' },
+        { label: '平均总分', value: (metrics.avgScore || 0) + '分', note: '百分制总分' },
         { label: '平均试错', value: metrics.avgFails, note: '全流程' },
         { label: '平均测验正确率', value: metrics.avgAccuracy + '%', note: '已测验学生' }
       ];
@@ -1048,6 +1237,70 @@ const adminHtml = () => `<!DOCTYPE html>
       });
       pageState.filteredStudents = sortStudents(filtered);
       renderStudents(pageState.filteredStudents);
+    };
+
+    const openStudentStagesModal = function(student) {
+      const timeline = Array.isArray(student.stageTimeline) ? student.stageTimeline : [];
+      const evaluation = Array.isArray(student.evaluation) ? student.evaluation : [];
+      const evaluationHtml = evaluation.length
+        ? evaluation.map(function(text) {
+            return '<div class="compact-item">' + escapeHtml(text) + '</div>';
+          }).join('')
+        : '<div class="empty">暂无学习评价。</div>';
+      const stageRows = timeline.length
+        ? timeline.map(function(stage) {
+            const isCompleted = !!stage.details;
+            const tags = Array.isArray(stage.tags) && stage.tags.length
+              ? '<div class="stage-tag-list">' + stage.tags.map(function(tag) {
+                  return '<span class="quiz-chip">' + escapeHtml(tag) + '</span>';
+                }).join('') + '</div>'
+              : '';
+
+            return '<div class="stage-detail-card' + (isCompleted ? '' : ' pending') + '">' +
+              '<div class="stage-detail-head">' +
+                '<div>' +
+                  '<div class="stage-detail-title">第 ' + escapeHtml(stage.stageId) + ' 关 · ' + escapeHtml(stage.stageName || stage.shortName || '') + '</div>' +
+                  '<div class="mini">提交时间 ' + escapeHtml(formatDate(stage.timestamp)) + '</div>' +
+                '</div>' +
+                '<span class="stage-status">' + escapeHtml(isCompleted ? stage.status : '未完成') + '</span>' +
+              '</div>' +
+              '<div class="stage-detail-metrics">' +
+                '<span class="metric-badge">分数 ' + escapeHtml(stage.score || 0) + '分</span>' +
+                '<span class="metric-badge">原始 ' + escapeHtml(stage.rawScore || 0) + '/' + escapeHtml(stage.maxScore || 0) + '</span>' +
+                '<span class="metric-badge">试错 ' + escapeHtml(stage.failCount || 0) + ' 次</span>' +
+              '</div>' +
+              tags +
+              '<div class="stage-note">' + escapeHtml(stage.note || '暂无阶段记录。') + '</div>' +
+            '</div>';
+          }).join('')
+        : '<div class="empty">暂无关卡学习数据。</div>';
+
+      const bodyHtml =
+        '<div class="modal-title-row">' +
+          '<div class="modal-title">' + escapeHtml(student.playerName) + ' · 全部关卡学习数据</div>' +
+          '<div class="pill">最近更新 ' + escapeHtml(formatDate(student.latestTimestamp)) + '</div>' +
+        '</div>' +
+        '<section class="detail-section">' +
+          '<div class="toolbar-actions">' +
+            '<div class="pill">完成 ' + escapeHtml(student.completedStages || 0) + '/7 关</div>' +
+            '<div class="pill">总分 ' + escapeHtml(student.totalScore || 0) + '分</div>' +
+            '<div class="pill">原始分 ' + escapeHtml(student.rawTotalScore || 0) + '/' + escapeHtml(student.maxTotalScore || 0) + '</div>' +
+            '<div class="pill">总试错 ' + escapeHtml(student.totalFails || 0) + ' 次</div>' +
+            '<div class="pill">测验正确率 ' + escapeHtml(student.quizSummary && student.quizSummary.accuracy ? student.quizSummary.accuracy : 0) + '%</div>' +
+          '</div>' +
+        '</section>' +
+        '<section class="detail-section" style="margin-top:14px;">' +
+          '<h3>学习评价</h3>' +
+          '<div class="compact-list">' + evaluationHtml + '</div>' +
+        '</section>' +
+        '<section class="detail-section" style="margin-top:14px;">' +
+          '<h3>关卡明细</h3>' +
+          '<div class="stage-detail-grid">' + stageRows + '</div>' +
+        '</section>';
+
+      document.getElementById('studentModalBody').innerHTML = bodyHtml;
+      document.getElementById('studentModal').classList.add('show');
+      document.body.classList.add('modal-open');
     };
 
     const openWordCloudModal = function(student) {
@@ -1155,18 +1408,23 @@ const adminHtml = () => `<!DOCTYPE html>
 
         return '<div class="student-row">' +
           '<div>' +
-            '<div class="student-name">' + escapeHtml(student.playerName) + '</div>' +
+            '<button type="button" class="student-name student-name-button" data-action="student" data-index="' + index + '">' + escapeHtml(student.playerName) + '</button>' +
             '<div class="mini">最近更新 ' + escapeHtml(formatDate(student.latestTimestamp)) + '</div>' +
           '</div>' +
           '<div>' + thumb + '</div>' +
           '<div><span class="progress-badge">' + escapeHtml(student.completedStages) + '/7</span></div>' +
-          '<div><span class="metric-badge">' + escapeHtml(student.totalScore) + '</span></div>' +
+          '<div><span class="metric-badge">' + escapeHtml(student.totalScore) + '分</span></div>' +
           '<div><span class="metric-badge">' + escapeHtml(student.quizSummary.accuracy) + '%</span></div>' +
           '<div><button type="button" class="ghost-btn" data-action="article" data-index="' + index + '"' + (student.stage6Detail && (student.stage6Detail.articleBody || student.stage6Detail.rawTextFull) ? '' : ' disabled') + '>查看文章</button></div>' +
           '<div><button type="button" class="ghost-btn" data-action="quiz" data-index="' + index + '"' + (student.stage7Detail && student.stage7Detail.records && student.stage7Detail.records.length ? '' : ' disabled') + '>查看测验</button></div>' +
         '</div>';
       }).join('');
 
+      document.querySelectorAll('[data-action="student"]').forEach(function(el) {
+        el.addEventListener('click', function() {
+          openStudentStagesModal(pageState.filteredStudents[Number(el.getAttribute('data-index'))]);
+        });
+      });
       document.querySelectorAll('[data-action="wordcloud"]').forEach(function(el) {
         el.addEventListener('click', function() {
           openWordCloudModal(pageState.filteredStudents[Number(el.getAttribute('data-index'))]);
@@ -1207,7 +1465,31 @@ const adminHtml = () => `<!DOCTYPE html>
       }
     };
 
+    const clearAllData = async function() {
+      const confirmed = window.confirm('确定要清除所有学生学习数据吗？此操作无法撤销。');
+      if (!confirmed) return;
+
+      const button = document.getElementById('clearAllBtn');
+      button.disabled = true;
+      button.textContent = '清除中...';
+
+      try {
+        const res = await fetch('/api/clear-all', { method: 'POST' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        pageState.students = [];
+        pageState.filteredStudents = [];
+        await loadDashboard();
+      } catch (error) {
+        console.error(error);
+        alert('清除失败，请稍后重试。');
+      } finally {
+        button.disabled = false;
+        button.textContent = '清除所有数据';
+      }
+    };
+
     document.getElementById('refreshBtn').addEventListener('click', loadDashboard);
+    document.getElementById('clearAllBtn').addEventListener('click', clearAllData);
     document.getElementById('searchInput').addEventListener('input', filterAndRenderStudents);
     document.getElementById('sortSelect').addEventListener('change', filterAndRenderStudents);
     document.getElementById('closeModalBtn').addEventListener('click', closeStudentModal);
@@ -1224,7 +1506,7 @@ const adminHtml = () => `<!DOCTYPE html>
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json({ limit: "50mb" }));
 
@@ -1234,6 +1516,65 @@ async function startServer() {
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok" });
+  });
+
+  app.post("/api/deepseek", async (req, res) => {
+    const apiKey = process.env.DEEPSEEK_API_KEY || process.env.GEMINI_API_KEY;
+    const { prompt, messages, temperature = 0.7 } = req.body || {};
+    const normalizedMessages = Array.isArray(messages)
+      ? messages
+          .filter((item) => item && typeof item.content === "string")
+          .map((item) => ({
+            role: item.role === "assistant" || item.role === "system" ? item.role : "user",
+            content: item.content,
+          }))
+      : typeof prompt === "string"
+        ? [{ role: "user", content: prompt }]
+        : [];
+
+    if (!apiKey) {
+      res.status(500).json({ error: "AI service is not configured" });
+      return;
+    }
+
+    if (!normalizedMessages.length) {
+      res.status(400).json({ error: "Missing prompt or messages" });
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    try {
+      const aiRes = await fetch("https://api.deepseek.com/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "deepseek-chat",
+          messages: normalizedMessages,
+          temperature,
+        }),
+        signal: controller.signal,
+      });
+
+      const text = await aiRes.text();
+      if (!aiRes.ok) {
+        console.error("DeepSeek request failed:", aiRes.status, text.slice(0, 300));
+        res.status(502).json({ error: "AI service request failed" });
+        return;
+      }
+
+      const data = JSON.parse(text);
+      res.json({ content: data.choices?.[0]?.message?.content || "" });
+    } catch (err: any) {
+      console.error("DeepSeek proxy error:", err?.message || err);
+      res.status(502).json({ error: "AI service is temporarily unavailable" });
+    } finally {
+      clearTimeout(timeoutId);
+    }
   });
 
   app.post("/api/records", (req, res) => {
@@ -1279,6 +1620,17 @@ async function startServer() {
       res.json(aggregateDashboardData(parsedRows));
     } catch (err: any) {
       console.error("Error aggregating dashboard data:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/clear-all", (_req, res) => {
+    try {
+      db.prepare("DELETE FROM records").run();
+      db.prepare("DELETE FROM sqlite_sequence WHERE name = ?").run("records");
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error clearing records:", err);
       res.status(500).json({ error: err.message });
     }
   });

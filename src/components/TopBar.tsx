@@ -1,43 +1,33 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Zap, Shirt, Moon, Flame, Mountain } from 'lucide-react';
 
 interface Props {
   stage: number;
   xp: number;
 }
 
-const STAGES = [
-  { id: 1, name: '初识词云', icon: '⚡' },
-  { id: 2, name: '文本分词', icon: '✨' },
-  { id: 3, name: '过滤清洗', icon: '🌙' },
-  { id: 4, name: '词频统计', icon: '🔥' },
-  { id: 5, name: '生成词云图', icon: '🔱' },
-];
+const FLOW_STEPS = ['初识词云图', '分词', '去废词', '算词频', '合并同义词', '生成', '实战演练', '终极测验'];
 
 export const TopBar: React.FC<Props> = ({ stage, xp }) => {
+  const activeIndex = Math.min(Math.max(stage - 1, 0), FLOW_STEPS.length - 1);
+
   return (
-    <div className="h-[80px] w-full px-4 md:px-10 flex items-center justify-between z-50 bg-black/20 border-b border-brand-gold/10">
-      
-      {/* Route map progress */}
-      <div className="flex items-center gap-1 md:gap-3">
-        {STAGES.map((s, index) => {
-          const isActive = stage >= s.id;
-          
+    <div className="h-[72px] w-full px-4 md:px-10 flex items-center justify-between gap-4 z-50 bg-[#061022]/90 border-b border-brand-cyan/20 shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
+      <div className="hidden md:block text-xs text-white/58 tracking-[0.18em] uppercase">
+        第24课：抽取文本汇词云
+      </div>
+
+      <div className="flex flex-1 items-center gap-2 sm:gap-3 min-w-0 overflow-x-auto pr-2">
+        {FLOW_STEPS.map((name, index) => {
+          const isActive = index <= activeIndex;
+
           return (
-            <React.Fragment key={s.id}>
-              <div className="flex flex-col items-center relative">
-                <div className={`w-9 h-9 rounded-full flex items-center justify-center border-[2px] transition-colors duration-300 \${isActive ? 'border-brand-gold bg-brand-gold text-bg-deep shadow-[0_0_15px_#FFD700]' : 'border-white/20 bg-white/5 text-white/50 text-[14px]'}`}>
-                  {s.icon}
-                </div>
-                <span className={`text-[10px] sm:text-[11px] absolute -bottom-5 whitespace-nowrap font-bold \${isActive ? 'text-brand-gold drop-shadow-md' : 'text-white/40'}`}>
-                  {s.name}
-                </span>
-              </div>
-              
-              {index < STAGES.length - 1 && (
-                <div className={`w-6 sm:w-15 h-[2px] overflow-hidden \${stage > s.id ? 'bg-gradient-to-r from-brand-gold to-brand-gold/10' : 'bg-white/10'}`}>
-                </div>
+            <React.Fragment key={name}>
+              <span className={`shrink-0 text-sm sm:text-base font-bold whitespace-nowrap transition-colors ${isActive ? 'text-brand-cyan drop-shadow-[0_0_8px_rgba(26,188,156,0.65)]' : 'text-white/58'}`}>
+                {name}
+              </span>
+              {index < FLOW_STEPS.length - 1 && (
+                <span className={`shrink-0 ${index < activeIndex ? 'text-brand-cyan/70' : 'text-white/28'} text-sm sm:text-base`}>→</span>
               )}
             </React.Fragment>
           );
@@ -45,7 +35,6 @@ export const TopBar: React.FC<Props> = ({ stage, xp }) => {
       </div>
 
       <div className="flex items-center gap-2 sm:gap-6 ml-auto">
-        <div className="text-[10px] sm:text-xs text-white/50 uppercase tracking-widest hidden sm:block">第 24 课：抽取文本汇词云</div>
         <div className="bg-brand-red/20 border border-brand-red px-3 sm:px-4 py-1 rounded-full text-brand-gold font-bold text-sm">
           XP <motion.span key={xp} initial={{ scale: 1.5, color: '#fff' }} animate={{ scale: 1, color: '#FFD700' }}>{Math.floor(xp).toString().padStart(4, '0')}</motion.span>
         </div>
@@ -53,5 +42,3 @@ export const TopBar: React.FC<Props> = ({ stage, xp }) => {
     </div>
   );
 };
-
-
