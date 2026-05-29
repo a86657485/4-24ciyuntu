@@ -7,3 +7,6 @@ coverage/
 .env*
 !.env.example
 learning_records.sqlite*
+
+# Local Netlify folder
+.netlify
