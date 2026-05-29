@@ -1506,7 +1506,7 @@ const adminHtml = () => `<!DOCTYPE html>
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = Number(process.env.PORT) || 3001;
 
   app.use(express.json({ limit: "50mb" }));
 
@@ -1543,7 +1543,7 @@ async function startServer() {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const timeoutId = setTimeout(() => controller.abort(), 30010);
 
     try {
       const aiRes = await fetch("https://api.deepseek.com/chat/completions", {

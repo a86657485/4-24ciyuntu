@@ -25,7 +25,7 @@ if not exist ".env.local" (
     set /p APIKEY="请输入 DeepSeek API Key: "
     echo DEEPSEEK_API_KEY="!APIKEY!" > .env.local
     echo GEMINI_API_KEY="!APIKEY!" >> .env.local
-    echo APP_URL="http://localhost:3000" >> .env.local
+    echo APP_URL="http://localhost:3001" >> .env.local
     echo [完成] .env.local 已创建
     echo.
 )
@@ -43,8 +43,8 @@ if not exist "node_modules" (
 echo [2/2] 启动服务...
 echo.
 echo ══════════════════════════════════════════
-echo  学习应用：http://localhost:3000
-echo  数据大屏：http://localhost:3000/admin
+echo  学习应用：http://localhost:3001
+echo  数据大屏：http://localhost:3001/admin
 echo ══════════════════════════════════════════
 echo.
 echo 按 Ctrl+C 停止服务
