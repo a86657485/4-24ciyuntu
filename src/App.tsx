@@ -115,7 +115,7 @@ export default function App() {
   const wrapComplete = (stageIdx: number) => {
     return (score: number, extraData?: any, failCount: number = 0) => {
       // Async POST without awaiting to avoid blocking UI
-      fetch('https://4-24ciyuntu.netlify.app/api/records', {
+      fetch('/api/records', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
