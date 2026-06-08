@@ -10,3 +10,5 @@ learning_records.sqlite*
 
 # Local Netlify folder
 .netlify
+
+.vercel
