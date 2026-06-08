@@ -1,6 +1,12 @@
 import type { Config } from "@netlify/functions";
 import { getStore } from "@netlify/blobs";
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
 const STAGE_META = [
   { id: 1, name: "初始流程图", shortName: "初始流程图" },
   { id: 2, name: "分词", shortName: "分词" },
@@ -161,7 +167,8 @@ const aggregateDashboardData = (rows: any[]) => {
   return { metrics: { totalStudents: students.length, totalRecords: rows.length, completedStudents, avgScore, avgFails, avgAccuracy }, stageStats, students };
 };
 
-export default async (_req: Request) => {
+export default async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders, status: 204 });
   try {
     const store = getStore({ name: "learning-records", consistency: "strong" });
     const { blobs } = await store.list({ prefix: "r:" });
@@ -172,11 +179,11 @@ export default async (_req: Request) => {
     }
     rows.sort((a, b) => a.id - b.id);
     return new Response(JSON.stringify(aggregateDashboardData(rows)), {
-      headers: { "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err: any) {
     return new Response(JSON.stringify({ error: err.message }), {
-      status: 500, headers: { "Content-Type": "application/json" },
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 };

@@ -1,39 +1,46 @@
-import type { Config } from "@netlify/functions";
+﻿import type { Config } from "@netlify/functions";
 import { getStore } from "@netlify/blobs";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
 
 const STORE = "learning-records";
 
 export default async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders, status: 204 });
+
   if (req.method === "POST") {
     try {
       const body = await req.json();
       const { playerName, stage, score, failCount, details } = body || {};
       const store = getStore({ name: STORE, consistency: "strong" });
-
       const counterRaw = await store.get("counter");
       const nextId = (counterRaw ? parseInt(counterRaw) : 0) + 1;
       await store.set("counter", String(nextId));
 
-      // Normalize details: if it's already a string, keep as-is; otherwise stringify
       let detailsStr = "{}";
       if (details) {
         detailsStr = typeof details === "string" ? details : JSON.stringify(details);
       }
 
       const record = {
-        id: nextId,
-        playerName: playerName || "Unknown",
-        stage: stage || 0,
-        score: score || 0,
-        failCount: failCount || 0,
-        details: detailsStr,
+        id: nextId, playerName: playerName || "Unknown",
+        stage: stage || 0, score: score || 0,
+        failCount: failCount || 0, details: detailsStr,
         timestamp: new Date().toISOString(),
       };
 
       await store.setJSON("r:" + nextId, record);
-      return Response.json({ success: true, id: nextId });
+      return new Response(JSON.stringify({ success: true, id: nextId }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     } catch (err: any) {
-      return Response.json({ error: err.message }, { status: 500 });
+      return new Response(JSON.stringify({ error: err.message }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
   }
 
@@ -52,16 +59,17 @@ export default async (req: Request) => {
         if (tb !== ta) return tb - ta;
         return b.id - a.id;
       });
-      return Response.json(records);
+      return new Response(JSON.stringify(records), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     } catch (err: any) {
-      return Response.json({ error: err.message }, { status: 500 });
+      return new Response(JSON.stringify({ error: err.message }), {
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
   }
 
-  return new Response(null, { status: 405 });
+  return new Response(null, { status: 405, headers: corsHeaders });
 };
 
-export const config: Config = {
-  path: "/api/records",
-  method: ["GET", "POST"],
-};
+export const config: Config = { path: "/api/records", method: ["GET", "POST"] };
