@@ -8,6 +8,7 @@ const corsHeaders = {
 };
 
 const STORE = "learning-records";
+const ALL_RECORDS_KEY = "all-records";
 
 export default async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders, status: 204 });
@@ -17,6 +18,8 @@ export default async (req: Request) => {
       const body = await req.json();
       const { playerName, stage, score, failCount, details } = body || {};
       const store = getStore({ name: STORE, consistency: "strong" });
+
+      // Increment counter atomically
       const counterRaw = await store.get("counter");
       const nextId = (counterRaw ? parseInt(counterRaw) : 0) + 1;
       await store.set("counter", String(nextId));
@@ -33,7 +36,16 @@ export default async (req: Request) => {
         timestamp: new Date().toISOString(),
       };
 
-      await store.setJSON("r:" + nextId, record);
+      // Read existing records, append, write back as single blob
+      let allRecords: any[] = [];
+      try {
+        const existing = await store.get(ALL_RECORDS_KEY, { type: "json" });
+        if (Array.isArray(existing)) allRecords = existing;
+      } catch { /* blob doesn''t exist yet */ }
+
+      allRecords.push(record);
+      await store.setJSON(ALL_RECORDS_KEY, allRecords);
+
       return new Response(JSON.stringify({ success: true, id: nextId }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -47,18 +59,21 @@ export default async (req: Request) => {
   if (req.method === "GET") {
     try {
       const store = getStore({ name: STORE, consistency: "strong" });
-      const { blobs } = await store.list({ prefix: "r:" });
-      const records: any[] = [];
-      for (const blob of blobs) {
-        const data = await store.get(blob.key, { type: "json" });
-        if (data) records.push(data);
-      }
+
+      // Try single blob first
+      let records: any[] = [];
+      try {
+        const data = await store.get(ALL_RECORDS_KEY, { type: "json" });
+        if (Array.isArray(data)) records = data;
+      } catch { /* not found, return empty */ }
+
       records.sort((a, b) => {
         const ta = new Date(a.timestamp).getTime();
         const tb = new Date(b.timestamp).getTime();
         if (tb !== ta) return tb - ta;
         return b.id - a.id;
       });
+
       return new Response(JSON.stringify(records), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

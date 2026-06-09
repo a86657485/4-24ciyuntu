@@ -1,4 +1,4 @@
-import type { Config } from "@netlify/functions";
+﻿import type { Config } from "@netlify/functions";
 import { getStore } from "@netlify/blobs";
 
 const corsHeaders = {
@@ -7,10 +7,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
+const STORE = "learning-records";
+const ALL_RECORDS_KEY = "all-records";
+
 const STAGE_META = [
   { id: 1, name: "初始流程图", shortName: "初始流程图" },
   { id: 2, name: "分词", shortName: "分词" },
-  { id: 3, name: "去废语", shortName: "去废语" },
+  { id: 3, name: "去废词", shortName: "去废词" },
   { id: 4, name: "算词频", shortName: "算词频" },
   { id: 5, name: "合并同义词", shortName: "合并同义词" },
   { id: 6, name: "生成", shortName: "生成" },
@@ -68,7 +71,7 @@ const buildStageInsight = (row: any) => {
   if (row.stage === 6 && looksLikeStage6Detail(details)) {
     const words = details.finalWordFreq || [];
     const topWords = getTopWords(words, 5);
-    return { tags: ["旧实战词项 " + words.length + " 个"], note: topWords.length > 0 ? "最终高频词为" + topWords.map((w: any) => w.text).join("、") : "旧编号实战记录已保留" };
+    return { tags: ["旧实战词项" + words.length + " 个"], note: topWords.length > 0 ? "最终高频词为" + topWords.map((w: any) => w.text).join("、") : "旧编号实战记录已保留" };
   }
   return { tags: ["阶段 " + row.stage], note: "已完成" };
 };
@@ -108,7 +111,6 @@ const aggregateDashboardData = (rows: any[]) => {
       };
     });
 
-    // Extract wordCloudImage from stage 7 (实战演练) or legacy stage 6 records
     const stage7 = latestStageMap.get(7);
     const legacyStage6 = latestStageMap.get(6);
     let wordCloudImage = "";
@@ -170,14 +172,16 @@ const aggregateDashboardData = (rows: any[]) => {
 export default async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders, status: 204 });
   try {
-    const store = getStore({ name: "learning-records", consistency: "strong" });
-    const { blobs } = await store.list({ prefix: "r:" });
-    const rows: any[] = [];
-    for (const blob of blobs) {
-      const data = await store.get(blob.key, { type: "json" });
-      if (data) rows.push(data);
-    }
-    rows.sort((a, b) => a.id - b.id);
+    const store = getStore({ name: STORE, consistency: "strong" });
+
+    // Read all records from single blob (fast - one network call)
+    let rows: any[] = [];
+    try {
+      const data = await store.get(ALL_RECORDS_KEY, { type: "json" });
+      if (Array.isArray(data)) rows = data;
+    } catch { /* blob doesn''t exist yet, return empty */ }
+
+    rows.sort((a: any, b: any) => a.id - b.id);
     return new Response(JSON.stringify(aggregateDashboardData(rows)), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -7,15 +7,27 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
+const STORE = "learning-records";
+const ALL_RECORDS_KEY = "all-records";
+
 export default async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders, status: 204 });
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405, headers: corsHeaders });
 
   try {
-    const store = getStore({ name: "learning-records", consistency: "strong" });
-    const { blobs } = await store.list({ prefix: "r:" });
-    for (const blob of blobs) await store.delete(blob.key);
+    const store = getStore({ name: STORE, consistency: "strong" });
+
+    // Delete the single records blob
+    try { await store.delete(ALL_RECORDS_KEY); } catch { /* already gone */ }
+
+    // Also clean up any leftover individual blobs (from old architecture)
+    try {
+      const { blobs } = await store.list({ prefix: "r:" });
+      for (const blob of blobs) await store.delete(blob.key);
+    } catch { /* fine */ }
+
     await store.set("counter", "0");
+
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
