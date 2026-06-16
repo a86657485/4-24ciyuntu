@@ -1635,6 +1635,55 @@ async function startServer() {
     }
   });
 
+  app.get("/api/wordcloud", (req, res) => {
+    const student = req.query.student as string;
+    if (!student) {
+      res.status(400).json({ error: "Missing student parameter" });
+      return;
+    }
+    try {
+      const stmt = db.prepare("SELECT details FROM records WHERE playerName = ? ORDER BY id DESC");
+      const rows = stmt.all(student) as { details: string | null }[];
+      let wordCloudImage = "";
+      for (const row of rows) {
+        const details = safeJsonParse(row.details);
+        if (typeof details.wordCloudImage === "string" && details.wordCloudImage.length > 100) {
+          wordCloudImage = details.wordCloudImage;
+          break;
+        }
+      }
+      res.json({ student, wordCloudImage });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/student-detail", (req, res) => {
+    const studentName = req.query.name as string;
+    if (!studentName) {
+      res.status(400).json({ error: "Missing name parameter" });
+      return;
+    }
+    try {
+      const stmt = db.prepare("SELECT * FROM records WHERE playerName = ? ORDER BY id ASC");
+      const rows = stmt.all(studentName) as RawRow[];
+      if (rows.length === 0) {
+        res.status(404).json({ error: "Student not found" });
+        return;
+      }
+      const parsedRows = toParsedRows(rows);
+      const allData = aggregateDashboardData(parsedRows);
+      const student = allData.students.find((s: any) => s.playerName === studentName);
+      if (!student) {
+        res.status(404).json({ error: "Student not found in aggregation" });
+        return;
+      }
+      res.json(student);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
