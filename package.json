@@ -4,11 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
-    "start": "node --experimental-strip-types server.ts",
     "build": "vite build",
-    "preview": "vite preview",
-    "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -16,6 +12,7 @@
     "@netlify/blobs": "^10.7.8",
     "@tailwindcss/vite": "^4.1.14",
     "@vercel/kv": "^3.0.0",
+    "@vercel/postgres": "^0.10.0",
     "@vitejs/plugin-react": "^5.0.4",
     "better-sqlite3": "^12.9.0",
     "dotenv": "^17.2.3",
